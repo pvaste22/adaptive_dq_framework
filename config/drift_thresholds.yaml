@@ -1,0 +1,83 @@
+# Drift Detection Configuration for Adaptive Data Quality Framework
+
+drift_detection:
+  significance_threshold: 0.08
+  min_history_size: 100
+  max_history_size: 1000
+  
+  window_size_minutes: 5
+  sliding_step_minutes: 2
+  
+  distribution_bins: 50
+  jsd_calculation_method: "histogram"
+  
+  pattern_recognition:
+    daily_cycle_threshold: 0.15
+    weekly_cycle_threshold: 0.20
+    peak_hours: [8, 9, 10, 11, 16, 17, 18]
+    off_peak_hours: [1, 2, 3, 4, 5, 6]
+  
+  adaptation:
+    consecutive_detections_required: 3
+    cooldown_period_minutes: 60
+    confidence_threshold: 0.85
+
+# Quality Dimension Thresholds
+quality_thresholds:
+  # Completeness thresholds
+  completeness:
+    minimum_ratio: 0.95               # 95% of expected records required
+    cell_records_expected: 260        # 52 cells × 5 timestamps
+    ue_records_expected: 240          # 48 UEs × 5 timestamps
+    
+  # Consistency thresholds  
+  consistency:
+    correlation_tolerance: 0.30       # ±30% from expected correlations
+    physical_rule_tolerance: 0.01     # Very strict for mathematical rules
+    
+  # Accuracy thresholds
+  accuracy:
+    z_score_threshold: 3.0           # Standard statistical threshold
+    iqr_multiplier: 1.5              # Standard IQR outlier detection
+    energy_validation_tolerance: 0.20 # 20% tolerance for energy formula
+    spectral_efficiency_max: 30.0    # Theoretical 5G limit
+    
+  # Timeliness thresholds
+  timeliness:
+    update_interval_seconds: 60       # Expected update frequency
+    interval_tolerance_seconds: 5     # ±5 seconds acceptable
+    staleness_threshold: 3            # 3 consecutive unchanged values
+    ks_test_significance: 0.05        # Kolmogorov-Smirnov test threshold
+    
+  # Skewness thresholds
+  skewness:
+    jsd_normal_threshold: 0.1         # JSD < 0.1 considered normal
+    jsd_moderate_threshold: 0.3       # JSD 0.1-0.3 moderate deviation
+    # JSD > 0.3 considered high deviation
+
+# Pattern Baseline Tolerances (from VIAVI dataset analysis)
+pattern_tolerances:
+  mimo_zero_rate: 0.10        # ±10% from observed 86%
+  cqi_zero_rate: 0.10         # ±10% from observed 60%
+  ul_dl_symmetry: 0.15        # ±15% from observed 87%
+  tb_counter_reliability: 0.05 # TB counters mostly unreliable
+  prb_tot_percentage_range: [0, 100]  # PrbTot is percentage
+
+# Value Ranges for Validation
+value_ranges:
+  DRB.UECqiDl: [0, 15]
+  DRB.UECqiUl: [0, 15]
+  RRC.ConnMax: [0, 255]
+  RRC.ConnMean: [0, 255]
+  RRU.PrbTotDl: [0, 100]  # Percentage
+  RRU.PrbTotUl: [0, 100]  # Percentage
+  RRU.MaxLayerDlMimo: [1, 8]
+  CARR.AverageLayersDl: [0, 8]
+  DRB.UEThpDl: [0, 1000]  # Mbps
+  DRB.UEThpUl: [0, 500]   # Mbps
+
+# Metadata
+metadata:
+  configuration_version: "1.0"
+  created_date: "2025-01-09"
+  tuning_status: "initial_conservative"

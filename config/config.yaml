@@ -1,0 +1,209 @@
+# Main Configuration File for Adaptive Data Quality Framework
+
+framework:
+  name: "Adaptive Data Quality Framework"
+  version: "1.0.0"
+  implementation_phase: "phase1"
+  environment: "development"
+  created: "2025-01-09"
+  author: "O-RAN Data Quality Team"
+
+# Data Source Configuration with Schema
+data_sources:
+  viavi_dataset:
+    enabled: true
+    cell_reports_file: "data/raw/CellReports.csv"
+    ue_reports_file: "data/raw/UEReports-flow.csv"
+    expected_entities:
+      cells: 52
+      ues: 48
+    measurement_interval_seconds: 60
+    
+    # Column mappings
+    column_names:
+      timestamp: 'timestamp'
+      cell_entity: 'Viavi.Cell.Name'
+      ue_entity: 'Viavi.UE.Name'
+    
+    # Metric groups for processing
+    metric_groups:
+      prb_metrics: ['RRU.PrbUsedDl', 'RRU.PrbUsedUl', 'RRU.PrbAvailDl', 'RRU.PrbAvailUl', 'RRU.PrbTotDl', 'RRU.PrbTotUl']
+      throughput_metrics: ['DRB.UEThpDl', 'DRB.UEThpUl']
+      cqi_metrics: ['DRB.UECqiDl', 'DRB.UECqiUl']
+      energy_metrics: ['PEE.AvgPower', 'PEE.Energy']
+      connection_metrics: ['RRC.ConnMean', 'RRC.ConnMax']
+      mimo_metrics: ['RRU.MaxLayerDlMimo', 'CARR.AverageLayersDl']
+      tb_metrics_unreliable: ['TB.TotNbrDl', 'TB.TotNbrUl']
+      qos_flow_metrics: ['QosFlow.TotPdcpPduVolumeDl', 'QosFlow.TotPdcpPduVolumeUl']
+    
+    # Known data issues
+    data_quirks:
+      tb_counters_unreliable: true
+      cqi_zero_is_no_measurement: true
+      prb_tot_is_percentage: true
+      energy_is_cumulative: true
+      qos_flow_has_1s_semantics: true
+      mobility_metrics_missing: true
+
+# Processing Configuration
+processing:
+  windowing:
+    size_minutes: 5
+    overlap_percent: 40
+    minimum_completeness: 0.95
+    validation_enabled: true
+    
+  unit_conversion:
+    prb_percentage_to_absolute: true
+    energy_cumulative_to_interval: true
+    qos_flow_validation: true
+    validation_tolerance: 0.20
+    
+  feature_extraction:
+    statistical_features: true
+    temporal_features: true
+    correlation_features: true
+    normalization_method: "z_score"
+
+# Quality Assessment Configuration
+quality_assessment:
+  dimensions:
+    completeness: true
+    consistency: true
+    accuracy: true
+    timeliness: true
+    skewness: true
+    
+  scoring:
+    traditional_scoring: true
+    ml_scoring: false  # Enable after Phase 2
+    pca_consolidation: false  # Enable after Phase 2
+    
+  baselines:
+    auto_update: false
+    validation_required: true
+    backup_previous: true
+
+# Drift Detection Configuration
+drift_detection:
+  enabled: false  # Enable in Phase 3
+  config_file: "config/drift_thresholds.yaml"
+  monitoring_metrics:
+    - "RRU.PrbUsedDl"
+    - "RRU.PrbUsedUl" 
+    - "DRB.UEThpDl"
+    - "DRB.UEThpUl"
+    - "RRC.ConnMean"
+    - "PEE.AvgPower"
+    - "DRB.UECqiDl"
+
+# Machine Learning Configuration
+machine_learning:
+  enabled: false  # Enable in Phase 2
+  model_type: "xgboost"
+  hyperparameter_tuning: true
+  validation_split: 0.2
+  cross_validation_folds: 5
+  artifact_versioning: true
+
+# External Configuration Files
+external_configs:
+  band_specifications: "config/band_configs.json"
+  drift_thresholds: "config/drift_thresholds.yaml"
+  logging_config: "config/logging_config.yaml"
+
+# Storage Configuration
+storage:
+  artifacts:
+    base_path: "data/artifacts"
+    versioning_enabled: true
+    compression: true
+    max_versions_keep: 10
+    
+  processed_data:
+    format: "parquet"
+    compression: "snappy"
+    base_path: "data/processed"
+    
+  logs:
+    base_path: "data/logs"
+    retention_days: 30
+    level: "INFO"
+    file_rotation: true
+
+# Performance Configuration
+performance:
+  memory:
+    max_windows_in_memory: 1000
+    garbage_collection_frequency: 100
+    large_file_threshold_mb: 100
+    
+  processing:
+    parallel_processing: false
+    max_workers: 4
+    chunk_size: 1000
+    
+  caching:
+    enabled: true
+    cache_size_mb: 512
+    cache_artifacts: true
+
+# Validation and Testing
+validation:
+  data_validation:
+    strict_mode: true
+    mandatory_fields_check: true
+    range_validation: true
+    pattern_validation: true
+    
+  model_validation:
+    enabled: false
+    validation_metrics: ["mae", "r2"]
+    acceptance_thresholds:
+      mae: 0.15
+      r2: 0.85
+
+# Phases Configuration
+phases:
+  phase1:
+    focus: "data_preparation_and_baselines"
+    required_components: ["data_loader", "unit_converter", "window_generator"]
+    output_artifacts: ["statistical_baselines", "historical_pdfs", "sample_windows"]
+    validation_required: true
+    
+  phase2:
+    focus: "quality_scoring_and_ml_training"
+    enabled: false
+    required_components: ["quality_dimensions", "pca_consolidator", "model_trainer"]
+    depends_on_phase1: true
+    
+  phase3:
+    focus: "drift_detection_and_adaptation"
+    enabled: false
+    required_components: ["drift_detector", "method_activator"]
+    depends_on_phase2: true
+    
+  phase4:
+    focus: "deployment_and_integration"
+    enabled: false
+    required_components: ["xapp_framework", "kafka_integration"]
+    depends_on_phase3: true
+
+# Development Settings
+development:
+  debug:
+    enabled: true
+    verbose_logging: true
+    save_intermediate_results: true
+    validation_reports: true
+    
+  testing:
+    use_synthetic_data: false
+    fast_testing_mode: false
+    skip_time_consuming_tests: false
+
+# Metadata
+metadata:
+  config_version: "1.0"
+  last_updated: "2025-01-09"
+  validation_status: "pending"

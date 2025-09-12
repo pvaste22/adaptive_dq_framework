@@ -1,0 +1,50 @@
+{
+  "band_specifications": {
+    "B2": {
+      "name": "LTE Band 2",
+      "technology": "FDD LTE",
+      "frequency_mhz": 1900,
+      "bandwidth_mhz": 20,
+      "prb_count": 100,
+      "spectral_efficiency_max": 25.0,
+      "power_limits": {
+        "min_watts": 50,
+        "max_watts": 400
+      }
+    },
+    "B13": {
+      "name": "LTE Band 13",
+      "technology": "FDD LTE", 
+      "frequency_mhz": 700,
+      "bandwidth_mhz": 15,
+      "prb_count": 75,
+      "spectral_efficiency_max": 25.0,
+      "power_limits": {
+        "min_watts": 40,
+        "max_watts": 350
+      }
+    },
+    "N77": {
+      "name": "5G NR Band 77",
+      "technology": "TDD 5G NR",
+      "frequency_mhz": 3700,
+      "bandwidth_mhz": 100,
+      "prb_count": 273,
+      "spectral_efficiency_max": 30.0,
+      "power_limits": {
+        "min_watts": 80,
+        "max_watts": 500
+      }
+    }
+  },
+  "validation_rules": {
+    "prb_utilization_max_percent": 95,
+    "spectral_efficiency_tolerance": 0.1,
+    "power_consumption_tolerance": 0.15
+  },
+  "metadata": {
+    "source": "O-RAN specifications and VIAVI dataset analysis",
+    "created": "2025-01-09",
+    "version": "1.0"
+  }
+}

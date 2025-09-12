@@ -1,0 +1,132 @@
+# .gitignore for Adaptive Data Quality Framework
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints
+
+# Data Files (Large datasets should not be in git)
+data/raw/*.csv
+data/raw/*.parquet
+data/processed/
+data/logs/
+*.log
+
+# Model Artifacts (Large ML models)
+data/artifacts/models/*.pkl
+data/artifacts/scalers/*.pkl
+data/artifacts/distributions/*.pkl
+data/artifacts/baselines/*.npy
+data/artifacts/historical_windows/*.pkl
+
+# Keep artifact structure but ignore large files
+!data/artifacts/models/.gitkeep
+!data/artifacts/scalers/.gitkeep
+!data/artifacts/distributions/.gitkeep
+!data/artifacts/baselines/.gitkeep
+!data/artifacts/historical_windows/.gitkeep
+
+# Configuration with sensitive data
+config/secrets.yaml
+config/production.yaml
+.env
+.env.local
+
+# Test outputs
+test_output/
+coverage_html_report/
+.coverage
+.pytest_cache/
+
+# Operating System
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker
+.dockerignore
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Documentation build
+docs/_build/
+docs/build/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Profiling
+*.prof
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pyright
+.pyright/
+
+# Experiment tracking (if using MLflow, wandb)
+mlruns/
+wandb/
+
+# Large result files
+results/
+outputs/
+*.png
+*.jpg
+*.jpeg
+*.pdf
+plots/
+
+# Keep empty directories with .gitkeep
+!**/.gitkeep
