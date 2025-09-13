@@ -8,194 +8,245 @@ Purpose: Window generator for 5-minute data windows
 
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Tuple, Optional
 from datetime import datetime, timedelta
+from typing import List, Dict, Generator, Tuple
+from pathlib import Path
+import sys
+import os
+import json
+from datetime import datetime 
 
-from ..common.logger import get_phase1_logger
-from ..common.constants import (
-    WINDOW_SPECS, EXPECTED_ENTITIES, COLUMN_NAMES,
-    QUALITY_THRESHOLDS
+
+project_root = Path(__file__).parent.parent.parent 
+src_path = project_root / 'src'
+sys.path.insert(0, str(src_path))
+
+from common.logger import get_phase1_logger
+from common.constants import (
+    WINDOW_SPECS, EXPECTED_ENTITIES, COLUMN_NAMES, MEAS_INTERVAL_SEC
 )
-from ..common.exceptions import WindowGenerationError
-from ..common.utils import validate_window_completeness, save_artifact
+from common.exceptions import WindowGenerationError
 
+#this file will need to be modified when deploying on kafka stream to generate windows for deployment data
 class WindowGenerator:
-    """Generates 5-minute sliding windows from O-RAN data."""
+    """Creates 5-minute sliding windows from VIAVI time-series data."""
     
     def __init__(self, config: Dict):
         self.config = config
         self.logger = get_phase1_logger('window_generator')
+        self.window_specs = WINDOW_SPECS
+        self.expected_entities = EXPECTED_ENTITIES
         
-        # Window parameters from config
-        self.window_size_minutes = config.get('window_size_minutes', 5)
-        self.overlap_percent = config.get('overlap_percent', 50)
-        self.min_completeness = config.get('min_completeness', 0.95)
-        
-        # Calculate step size
-        self.step_minutes = self.window_size_minutes * (1 - self.overlap_percent / 100)
-        
-        # Expected counts
-        self.expected_counts = {
-            'cells': EXPECTED_ENTITIES['cells'],
-            'ues': EXPECTED_ENTITIES['ues'],
-            'timestamps_per_window': self.window_size_minutes,
-            'cell_records_per_window': WINDOW_SPECS['expected_records']['cells_per_window'],
-            'ue_records_per_window': WINDOW_SPECS['expected_records']['ues_per_window'],
-            'total_records_per_window': WINDOW_SPECS['expected_records']['total_per_window']
-        }
-        
-    def generate_windows(self, 
-                        cell_data: pd.DataFrame, 
-                        ue_data: pd.DataFrame) -> List[Dict]:
+    def generate_windows(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> List[Dict]:
         """Generate 5-minute windows from cell and UE data."""
-        self.logger.info("Starting window generation...")
         
-        # Validate input
-        self._validate_input_data(cell_data, ue_data)
+        self.logger.info("Generating 5-minute sliding windows...")
+        
+        # Prepare data
+        cell_data = cell_data.sort_values('timestamp')
+        ue_data = ue_data.sort_values('timestamp')
         
         # Get time boundaries
-        start_time, end_time = self._get_time_boundaries(cell_data, ue_data)
+        start_time = max(cell_data['timestamp'].min(), ue_data['timestamp'].min())
+        end_time = min(cell_data['timestamp'].max(), ue_data['timestamp'].max())
         
-        # Generate window time slots
-        window_times = self._generate_window_time_slots(start_time, end_time)
+        # Calculate window parameters
+        window_size = timedelta(minutes=self.window_specs['size_minutes'])
+        overlap_minutes = self.window_specs['size_minutes'] * (self.window_specs['overlap_percent'] / 100.0)
+        step_size = timedelta(minutes=self.window_specs['size_minutes'] - overlap_minutes)
         
-        # Create windows
         windows = []
-        for window_start, window_end in window_times:
-            window = self._create_single_window(
-                cell_data, ue_data, window_start, window_end
-            )
-            if window is not None:
+        current_time = start_time
+        window_id = 0
+        
+        while current_time + window_size <= end_time:
+            window_end = current_time + window_size
+            
+            # Extract window data
+            window_cell = self._extract_window_data(cell_data, current_time, window_end)
+            window_ue = self._extract_window_data(ue_data, current_time, window_end)
+            
+            # Validate window
+            validation_result = self._validate_window_basic(window_cell, window_ue)
+            
+            if validation_result['valid']:
+                window = {
+                    'window_id': f"window_{window_id:06d}_{current_time.strftime('%Y%m%d_%H%M%S')}",
+                    'start_time': current_time,
+                    'end_time': window_end,
+                    'cell_data': window_cell,
+                    'ue_data': window_ue,
+                    'metadata': self._create_window_metadata(window_cell, window_ue, window_id)
+                }
                 windows.append(window)
+                window_id += 1
+            else:
+                self.logger.debug(f"Skipping window at {current_time}: {validation_result['reason']}")
+            
+            current_time += step_size
         
-        self.logger.info(f"Generated {len(windows)} valid windows")
-        
-        # Save metadata if configured
-        if self.config.get('save_metadata', True):
-            self._save_window_metadata(windows)
-        
+        self.logger.info(f"Generated {len(windows)} valid windows from {window_id} attempts")
         return windows
     
-    def _validate_input_data(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame):
-        """Validate input data."""
-        timestamp_col = COLUMN_NAMES['timestamp']
+    def _extract_window_data(self, data: pd.DataFrame, start_time: datetime, end_time: datetime) -> pd.DataFrame:
+        """Extract data for a specific time window."""
+        mask = (data['timestamp'] >= start_time) & (data['timestamp'] < end_time)
+        return data[mask].copy()
+    
+    def _validate_window_basic(self, window_cell: pd.DataFrame, window_ue: pd.DataFrame) -> Dict:
+        """Basic window validation for Phase 1."""
         
-        if timestamp_col not in cell_data.columns or timestamp_col not in ue_data.columns:
-            raise WindowGenerationError(f"Timestamp column {timestamp_col} not found")
+        # Check minimum completeness
+        cell_count = len(window_cell)
+        ue_count = len(window_ue)
+        total_count = cell_count + ue_count
         
-        if len(cell_data) == 0 or len(ue_data) == 0:
-            raise WindowGenerationError("Empty data provided")
+        expected_total = self.window_specs['expected_records']['total_per_window']
+        completeness = total_count / expected_total if expected_total > 0 else 0
         
-        # Check entity columns
+        min_completeness = self.config.get('min_window_completeness', 0.8)
+        
+        if completeness < min_completeness:
+            return {
+                'valid': False,
+                'reason': f"Low completeness: {completeness:.2f} < {min_completeness}",
+                'completeness': completeness
+            }
+        
+        # Check timestamp consistency (should have 5 unique timestamps)
+        expected_timestamps = self.window_specs['size_minutes']
+        
+        if len(window_cell) > 0:
+            cell_timestamps = window_cell['timestamp'].nunique()
+            if cell_timestamps < expected_timestamps * 0.8:  # Allow some tolerance
+                return {
+                    'valid': False,
+                    'reason': f"Insufficient cell timestamps: {cell_timestamps} < {expected_timestamps}",
+                    'completeness': completeness
+                }
+        
+        if len(window_ue) > 0:
+            ue_timestamps = window_ue['timestamp'].nunique()
+            if ue_timestamps < expected_timestamps * 0.8:  # Allow some tolerance
+                return {
+                    'valid': False,
+                    'reason': f"Insufficient UE timestamps: {ue_timestamps} < {expected_timestamps}",
+                    'completeness': completeness
+                }
+        
+        return {
+            'valid': True,
+            'reason': "Valid window",
+            'completeness': completeness
+        }
+    
+    def _create_window_metadata(self, window_cell: pd.DataFrame, window_ue: pd.DataFrame, window_id: int) -> Dict:
+        """Create metadata for the window."""
+        
         cell_entity_col = COLUMN_NAMES['cell_entity']
         ue_entity_col = COLUMN_NAMES['ue_entity']
         
-        if cell_entity_col not in cell_data.columns:
-            raise WindowGenerationError(f"Cell entity column {cell_entity_col} not found")
-        if ue_entity_col not in ue_data.columns:
-            raise WindowGenerationError(f"UE entity column {ue_entity_col} not found")
-    
-    def _get_time_boundaries(self, 
-                           cell_data: pd.DataFrame, 
-                           ue_data: pd.DataFrame) -> Tuple[datetime, datetime]:
-        """Get overlapping time boundaries."""
-        timestamp_col = COLUMN_NAMES['timestamp']
-        
-        cell_start = cell_data[timestamp_col].min()
-        cell_end = cell_data[timestamp_col].max()
-        ue_start = ue_data[timestamp_col].min()
-        ue_end = ue_data[timestamp_col].max()
-        
-        overlap_start = max(cell_start, ue_start)
-        overlap_end = min(cell_end, ue_end)
-        
-        if overlap_start >= overlap_end:
-            raise WindowGenerationError("No overlapping time period")
-        
-        return overlap_start, overlap_end
-    
-    def _generate_window_time_slots(self, 
-                                  start_time: datetime, 
-                                  end_time: datetime) -> List[Tuple[datetime, datetime]]:
-        """Generate sliding window time slots."""
-        window_size = timedelta(minutes=self.window_size_minutes)
-        step_size = timedelta(minutes=self.step_minutes)
-        
-        windows = []
-        current_start = start_time
-        
-        while current_start + window_size <= end_time:
-            current_end = current_start + window_size
-            windows.append((current_start, current_end))
-            current_start += step_size
-        
-        return windows
-    
-    def _create_single_window(self, 
-                            cell_data: pd.DataFrame,
-                            ue_data: pd.DataFrame, 
-                            window_start: datetime,
-                            window_end: datetime) -> Optional[Dict]:
-        """Create a single window."""
-        timestamp_col = COLUMN_NAMES['timestamp']
-        
-        # Extract data for window
-        cell_mask = (
-            (cell_data[timestamp_col] >= window_start) & 
-            (cell_data[timestamp_col] < window_end)
-        )
-        ue_mask = (
-            (ue_data[timestamp_col] >= window_start) & 
-            (ue_data[timestamp_col] < window_end)
-        )
-        
-        window_cell_data = cell_data[cell_mask].copy()
-        window_ue_data = ue_data[ue_mask].copy()
-        
-        # Validate completeness
-        completeness = validate_window_completeness(
-            len(window_cell_data), 
-            len(window_ue_data)
-        )
-        
-        if completeness['total_completeness'] < self.min_completeness:
-            self.logger.debug(f"Window {window_start} below completeness threshold")
-            return None
-        
-        # Create window
-        window_id = f"window_{window_start.strftime('%Y%m%d_%H%M%S')}"
-        
-        return {
+        metadata = {
             'window_id': window_id,
-            'start_time': window_start,
-            'end_time': window_end,
-            'cell_data': window_cell_data,
-            'ue_data': window_ue_data,
-            'metadata': {
-                'completeness': completeness,
-                'cell_count': len(window_cell_data),
-                'ue_count': len(window_ue_data),
-                'unique_cells': window_cell_data[COLUMN_NAMES['cell_entity']].nunique(),
-                'unique_ues': window_ue_data[COLUMN_NAMES['ue_entity']].nunique()
+            'generation_time': datetime.now().isoformat(),
+            'record_counts': {
+                'cells': len(window_cell),
+                'ues': len(window_ue),
+                'total': len(window_cell) + len(window_ue)
+            },
+            'entity_counts': {
+                'unique_cells': window_cell[cell_entity_col].nunique() if len(window_cell) > 0 and cell_entity_col in window_cell.columns else 0,
+                'unique_ues': window_ue[ue_entity_col].nunique() if len(window_ue) > 0 and ue_entity_col in window_ue.columns else 0
+            },
+            'completeness': {
+                'cell_completeness': len(window_cell) / self.window_specs['expected_records']['cells_per_window'],
+                'ue_completeness': len(window_ue) / self.window_specs['expected_records']['ues_per_window'],
+                'total_completeness': (len(window_cell) + len(window_ue)) / self.window_specs['expected_records']['total_per_window']
+            },
+            'timestamp_range': {
+                'cell_start': window_cell['timestamp'].min().isoformat() if len(window_cell) > 0 else None,
+                'cell_end': window_cell['timestamp'].max().isoformat() if len(window_cell) > 0 else None,
+                'ue_start': window_ue['timestamp'].min().isoformat() if len(window_ue) > 0 else None,
+                'ue_end': window_ue['timestamp'].max().isoformat() if len(window_ue) > 0 else None
             }
         }
+        
+        return metadata
     
-    def _save_window_metadata(self, windows: List[Dict]):
-        """Save window metadata."""
-        if not windows:
-            return
+    def save_windows(self, windows: List[Dict], output_path: Path):
+        """Save windows to disk in organized structure."""
         
-        metadata_list = []
+        self.logger.info(f"Saving {len(windows)} windows to {output_path}")
+        
+        output_path.mkdir(parents=True, exist_ok=True)
+        
         for window in windows:
-            meta = {
+            window_dir = output_path / window['window_id']
+            window_dir.mkdir(exist_ok=True)
+            
+            # Save data
+            if len(window['cell_data']) > 0:
+                window['cell_data'].to_parquet(window_dir / 'cell_data.parquet', compression='snappy')
+            
+            if len(window['ue_data']) > 0:
+                window['ue_data'].to_parquet(window_dir / 'ue_data.parquet', compression='snappy')
+            
+            # Save metadata
+            import json
+            metadata_to_save = {
                 'window_id': window['window_id'],
-                'start_time': window['start_time'],
-                'end_time': window['end_time'],
-                **window['metadata']
+                'start_time': window['start_time'].isoformat(),
+                'end_time': window['end_time'].isoformat(),
+                'metadata': window['metadata']
             }
-            metadata_list.append(meta)
+            
+            with open(window_dir / 'metadata.json', 'w') as f:
+                json.dump(metadata_to_save, f, indent=2, default=str)
         
-        metadata_df = pd.DataFrame(metadata_list)
-        save_artifact(metadata_df, 'window_metadata', 'phase1', versioned=True)
+        # Create summary file
+        summary = {
+            'total_windows': len(windows),
+            'generation_time': datetime.now().isoformat(),
+            'time_span': {
+                'start': min(w['start_time'] for w in windows).isoformat() if windows else None,
+                'end': max(w['end_time'] for w in windows).isoformat() if windows else None
+            },
+            'completeness_stats': {
+                'mean': np.mean([w['metadata']['completeness']['total_completeness'] for w in windows]),
+                'min': np.min([w['metadata']['completeness']['total_completeness'] for w in windows]),
+                'max': np.max([w['metadata']['completeness']['total_completeness'] for w in windows])
+            } if windows else None
+        }
         
-        self.logger.info(f"Saved metadata for {len(windows)} windows")
+        with open(output_path / 'windows_summary.json', 'w') as f:
+            json.dump(summary, f, indent=2, default=str)
+        
+        self.logger.info(f"Windows saved successfully to {output_path}")
+    
+    def get_window_statistics(self, windows: List[Dict]) -> Dict:
+        """Calculate statistics across all windows."""
+        
+        if not windows:
+            return {'error': 'No windows provided'}
+        
+        stats = {
+            'total_windows': len(windows),
+            'time_span': {
+                'start': min(w['start_time'] for w in windows),
+                'end': max(w['end_time'] for w in windows),
+                'duration_hours': (max(w['end_time'] for w in windows) - min(w['start_time'] for w in windows)).total_seconds() / 3600
+            },
+            'completeness_stats': {
+                'mean': np.mean([w['metadata']['completeness']['total_completeness'] for w in windows]),
+                'std': np.std([w['metadata']['completeness']['total_completeness'] for w in windows]),
+                'min': np.min([w['metadata']['completeness']['total_completeness'] for w in windows]),
+                'max': np.max([w['metadata']['completeness']['total_completeness'] for w in windows])
+            },
+            'record_stats': {
+                'mean_total_records': np.mean([w['metadata']['record_counts']['total'] for w in windows]),
+                'mean_cell_records': np.mean([w['metadata']['record_counts']['cells'] for w in windows]),
+                'mean_ue_records': np.mean([w['metadata']['record_counts']['ues'] for w in windows])
+            }
+        }
+        
+        return stats

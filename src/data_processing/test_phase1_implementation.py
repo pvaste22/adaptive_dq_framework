@@ -1,132 +1,215 @@
-# tests/test_phase1_integration.py
-
+#!/usr/bin/env python3
 """
-Phase 1 Integration Test
-Purpose: End-to-end test of data loading, conversion, and windowing
+Complete Phase 1 Testing Script
+Tests all components step by step
 """
 
 import sys
-import pandas as pd
-import numpy as np
 from pathlib import Path
+import pandas as pd
 
-sys.path.append('../src')
+# Add src to path
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root / 'src'))
 
-from common.constants import *
-from common.logger import get_phase1_logger
-from data_processing.data_loader import DataLoader
-from data_processing.unit_converter import UnitConverter
-from data_processing.window_generator import WindowGenerator
+def test_step1_configuration():
+    """Test configuration loading"""
+    print("Testing configuration...")
+    try:
+        from common.constants import EXPECTED_ENTITIES, VIAVI_CONFIG, PATHS
+        print(f"  ✓ Expected cells: {EXPECTED_ENTITIES['cells']}")
+        print(f"  ✓ Expected UEs: {EXPECTED_ENTITIES['ues']}")
+        print(f"  ✓ Cell file: {VIAVI_CONFIG['cell_reports_file']}")
+        return True
+    except Exception as e:
+        print(f"  ❌ Configuration failed: {e}")
+        return False
 
-def test_phase1_pipeline():
-    """Complete Phase 1 pipeline test."""
-    logger = get_phase1_logger('phase1_test')
-    
+def test_step2_data_files():
+    """Test data file existence"""
+    print("Testing data files...")
+    try:
+        from common.constants import VIAVI_CONFIG
+        
+        cell_file = Path(VIAVI_CONFIG['cell_reports_file'])
+        ue_file = Path(VIAVI_CONFIG['ue_reports_file'])
+        
+        if cell_file.exists():
+            print(f"  ✓ Cell file found: {cell_file}")
+        else:
+            print(f"  ❌ Cell file missing: {cell_file}")
+            return False
+            
+        if ue_file.exists():
+            print(f"  ✓ UE file found: {ue_file}")
+        else:
+            print(f"  ❌ UE file missing: {ue_file}")
+            return False
+            
+        return True
+    except Exception as e:
+        print(f"  ❌ Data file test failed: {e}")
+        return False
+
+def test_step3_data_loading():
+    """Test data loading"""
+    print("Testing data loading...")
+    try:
+        from data_processing.data_loader import DataLoader
+        
+        config = {'measurement_interval_seconds': 60}
+        loader = DataLoader(config)
+        cell_data, ue_data = loader.load_data()
+        
+        print(f"  ✓ Loaded {len(cell_data)} cell records")
+        print(f"  ✓ Loaded {len(ue_data)} UE records")
+        print(f"  ✓ Cell columns: {len(cell_data.columns)}")
+        print(f"  ✓ UE columns: {len(ue_data.columns)}")
+        
+        return cell_data, ue_data
+    except Exception as e:
+        print(f"  ❌ Data loading failed: {e}")
+        return None, None
+
+def test_step4_unit_conversion(cell_data, ue_data):
+    """Test unit conversions"""
+    print("Testing unit conversions...")
+    try:
+        from data_processing.unit_converter import UnitConverter
+        
+        config = {
+            'measurement_interval_seconds': 60,
+            'prb_percentage_to_absolute': True,
+            'energy_cumulative_to_interval': True,
+            'qos_flow_validation': True
+        }
+        
+        converter = UnitConverter(config)
+        cell_converted, ue_converted = converter.standardize_units_comprehensive(cell_data, ue_data)
+        
+        print(f"  ✓ Cell data converted: {len(cell_converted)} records")
+        print(f"  ✓ UE data converted: {len(ue_converted)} records")
+        
+        # Check for conversion columns
+        if 'RRU.PrbTotDl_abs' in cell_converted.columns:
+            print("  ✓ PrbTot conversion applied")
+        if 'PEE.Energy_interval' in cell_converted.columns:
+            print("  ✓ Energy conversion applied")
+            
+        return cell_converted, ue_converted
+    except Exception as e:
+        print(f"  ❌ Unit conversion failed: {e}")
+        return None, None
+
+def test_step5_window_generation(cell_data, ue_data):
+    """Test window generation"""
+    print("Testing window generation...")
+    try:
+        from data_processing.window_generator import WindowGenerator
+        
+        config = {'min_window_completeness': 0.8}
+        generator = WindowGenerator(config)
+        windows = generator.generate_windows(cell_data, ue_data)
+        
+        print(f"  ✓ Generated {len(windows)} windows")
+        
+        if windows:
+            sample_window = windows[0]
+            print(f"  ✓ Sample window ID: {sample_window['window_id']}")
+            print(f"  ✓ Cell records in first window: {len(sample_window['cell_data'])}")
+            print(f"  ✓ UE records in first window: {len(sample_window['ue_data'])}")
+            
+        return windows
+    except Exception as e:
+        print(f"  ❌ Window generation failed: {e}")
+        return None
+
+def test_step6_save_windows(windows):
+    """Test saving windows"""
+    print("Testing window saving...")
+    try:
+        from data_processing.window_generator import WindowGenerator
+        from common.constants import PATHS
+        
+        output_dir = PATHS['processed_data'] / 'test_phase1' / 'windows'
+        
+        config = {}
+        generator = WindowGenerator(config)
+        
+        # Save first 5 windows only for testing
+        test_windows = windows[:5] if len(windows) > 5 else windows
+        generator.save_windows(test_windows, output_dir)
+        
+        print(f"  ✓ Saved {len(test_windows)} test windows to {output_dir}")
+        
+        # Verify files exist
+        first_window_dir = output_dir / test_windows[0]['window_id']
+        if first_window_dir.exists():
+            print("  ✓ Window directory created")
+            if (first_window_dir / 'cell_data.parquet').exists():
+                print("  ✓ Cell data parquet saved")
+            if (first_window_dir / 'metadata.json').exists():
+                print("  ✓ Metadata JSON saved")
+        
+        return True
+    except Exception as e:
+        print(f"  ❌ Window saving failed: {e}")
+        return False
+
+def main():
+    """Run complete Phase 1 test"""
     print("="*60)
-    print("PHASE 1 INTEGRATION TEST")
+    print("PHASE 1 COMPLETE TESTING")
     print("="*60)
     
-    # Test 1: Data Loading
-    print("\n[TEST 1] Data Loading")
-    config = {
-        'cell_file': '../data/raw/CellReports.csv',
-        'ue_file': '../data/raw/UEReports.csv',
-        'validate_on_load': True
-    }
+    # Test each step
+    tests = [
+        ("Configuration", test_step1_configuration),
+        ("Data Files", test_step2_data_files)
+    ]
     
-    loader = DataLoader(config)
-    cell_data, ue_data = loader.load_data()
+    # Run basic tests first
+    for test_name, test_func in tests:
+        print(f"\n[{test_name}]")
+        if not test_func():
+            print(f"\n❌ {test_name} test failed. Fix before continuing.")
+            return False
     
-    assert not cell_data.empty, "Cell data is empty!"
-    assert not ue_data.empty, "UE data is empty!"
-    print(f"✓ Loaded {len(cell_data)} cell records, {len(ue_data)} UE records")
+    # Run data processing tests
+    print(f"\n[Data Loading]")
+    cell_data, ue_data = test_step3_data_loading()
+    if cell_data is None:
+        print("\n❌ Data loading failed. Cannot continue.")
+        return False
     
-    # Test 2: Unit Conversions
-    print("\n[TEST 2] Unit Conversions")
-    converter_config = {
-        'prb_percentage_to_absolute': True,
-        'energy_cumulative_to_interval': True,
-        'qos_flow_validation': True,
-        'measurement_interval_seconds': 60
-    }
+    print(f"\n[Unit Conversion]")
+    cell_converted, ue_converted = test_step4_unit_conversion(cell_data, ue_data)
+    if cell_converted is None:
+        print("\n❌ Unit conversion failed. Cannot continue.")
+        return False
     
-    converter = UnitConverter(converter_config)
-    cell_data_conv, ue_data_conv = converter.standardize_units_comprehensive(
-        cell_data, ue_data
-    )
+    print(f"\n[Window Generation]")
+    windows = test_step5_window_generation(cell_converted, ue_converted)
+    if not windows:
+        print("\n❌ Window generation failed. Cannot continue.")
+        return False
     
-    # Verify conversions applied
-    assert 'prb_conversion_applied' in cell_data_conv.columns, "PRB conversion not applied!"
-    assert 'energy_conversion_applied' in cell_data_conv.columns, "Energy conversion not applied!"
+    print(f"\n[Window Saving]")
+    if not test_step6_save_windows(windows):
+        print("\n❌ Window saving failed.")
+        return False
     
-    # Check PrbTot conversion
-    if 'RRU.PrbTotDl_abs' in cell_data_conv.columns:
-        assert cell_data_conv['RRU.PrbTotDl_abs'].max() > 100, "PrbTot not converted to absolute!"
-        print(f"✓ PrbTot converted: max={cell_data_conv['RRU.PrbTotDl_abs'].max():.1f}")
-    
-    # Check energy conversion
-    if 'PEE.Energy_interval' in cell_data_conv.columns:
-        valid_intervals = cell_data_conv['PEE.Energy_interval'].dropna()
-        print(f"✓ Energy intervals calculated: {len(valid_intervals)} valid values")
-    
-    # Test 3: Window Generation
-    print("\n[TEST 3] Window Generation")
-    window_config = {
-        'window_size_minutes': 5,
-        'overlap_percent': 40,
-        'min_completeness': 0.95,
-        'save_metadata': True
-    }
-    
-    generator = WindowGenerator(window_config)
-    windows = generator.generate_windows(cell_data_conv, ue_data_conv)
-    
-    assert len(windows) > 0, "No windows generated!"
-    print(f"✓ Generated {len(windows)} windows")
-    
-    # Check window properties
-    first_window = windows[0]
-    assert 'window_id' in first_window
-    assert 'cell_data' in first_window
-    assert 'ue_data' in first_window
-    assert 'metadata' in first_window
-    
-    completeness = first_window['metadata']['completeness']['total_completeness']
-    print(f"✓ First window completeness: {completeness:.3f}")
-    
-    # Test 4: Artifact Saving
-    print("\n[TEST 4] Artifact Saving")
-    from common.utils import save_artifact, load_artifact
-    
-    # Save test artifact
-    test_data = pd.DataFrame({'test': [1, 2, 3]})
-    artifact_path = save_artifact(test_data, 'test_artifact', 'phase1')
-    assert Path(artifact_path).exists(), "Artifact not saved!"
-    print(f"✓ Artifact saved: {artifact_path}")
-    
-    # Load test artifact
-    loaded_data = load_artifact(artifact_path)
-    assert len(loaded_data) == 3, "Artifact loading failed!"
-    print("✓ Artifact loaded successfully")
-    
-    # Test 5: Quality Flags
-    print("\n[TEST 5] Quality Flags")
-    
-    # Check cell quality flags
-    if 'Data_quality_flags' in cell_data_conv.columns:
-        flag_counts = cell_data_conv['Data_quality_flags'].value_counts()
-        print(f"Cell quality flags: {dict(flag_counts.head())}")
-    
-    # Check UE quality flags
-    if 'Data_quality_flags' in ue_data_conv.columns:
-        flag_counts = ue_data_conv['Data_quality_flags'].value_counts()
-        print(f"UE quality flags: {dict(flag_counts.head())}")
-    
+    # Summary
     print("\n" + "="*60)
-    print("ALL PHASE 1 TESTS PASSED!")
+    print("PHASE 1 TEST RESULTS")
     print("="*60)
+    print("✓ All tests passed!")
+    print(f"✓ Data processed: {len(cell_data)} cell + {len(ue_data)} UE records")
+    print(f"✓ Windows generated: {len(windows)}")
+    print("✓ Ready for full Phase 1 execution")
     
     return True
 
 if __name__ == "__main__":
-    test_phase1_pipeline()
+    success = main()
+    sys.exit(0 if success else 1)

@@ -1,68 +1,112 @@
+# test_config_system_fixed.py
+"""
+Test script to verify the configuration system works properly.
+FIXED VERSION - no import * syntax errors
+"""
 
-#!/usr/bin/env python3
-"""
-Test script for foundation files
-"""
+import sys
+import os
 from pathlib import Path
-import os, glob
-def test_imports():
-    """Test that all foundation modules can be imported."""
-    try:
-        from src.common.constants import BAND_LIMITS, EXPECTED_ENTITIES
-        from src.common.logger import setup_logger, get_phase1_logger
-        from src.common.utils import extract_band_from_cell_name, save_artifact
-        from src.common.exceptions import DataQualityFrameworkError
-        
-        print("✅ All imports successful")
-        print(f"✅ Band limits loaded: {list(BAND_LIMITS.keys())}")
-        print(f"✅ Expected entities: {EXPECTED_ENTITIES}")
-        
-        # Test logger
-        logger = get_phase1_logger('foundation_test')
-        logger.info("Foundation test logging successful")
-        print("✅ Logger working")
-        
-        # Test utility function
-        band = extract_band_from_cell_name('S1/B13/C1')
-        print(f"✅ Utility function working: extracted band '{band}'")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Import failed: {e}")
-        return False
 
-def test_configurations():
-    """Test configuration files can be loaded."""
+def test_config_system():
+    """Test that all configuration files load properly"""
+    
+    print("Testing Configuration System...")
+    print("-" * 40)
+    
+    # Check if config files exist
+    project_root = Path.cwd()
+    config_files = {
+        'config.yaml': project_root / 'config' / 'config.yaml',
+        'band_configs.json': project_root / 'config' / 'band_configs.json', 
+        'drift_thresholds.yaml': project_root / 'config' / 'drift_thresholds.yaml'
+    }
+    
+    print("1. Checking config files exist...")
+    missing_files = []
+    for name, path in config_files.items():
+        if path.exists():
+            print(f"   ✅ {name}")
+        else:
+            print(f"   ❌ {name} - Missing!")
+            missing_files.append(name)
+    
+    if missing_files:
+        print(f"\n❌ Missing config files: {missing_files}")
+        print("Please create these files first.")
+        return False
+    
+    # Test importing constants (FIXED - no import * inside function)
+    print("\n2. Testing constants import...")
     try:
-        import json
-        import yaml
+        sys.path.append(str(project_root / 'src'))
+        import common.constants as const
+        print("   ✅ Constants imported successfully!")
+    except ImportError as e:
+        print(f"   ❌ Import error: {e}")
+        print("   Install dependencies: pip install pyyaml")
+        return False
+    except Exception as e:
+        print(f"   ❌ Configuration error: {e}")
+        return False
+    
+    # Test key values (FIXED - using const. prefix)
+    print("\n3. Testing key configuration values...")
+    try:
+        print(f"   Expected cells: {const.EXPECTED_ENTITIES['cells']}")
+        print(f"   Expected UEs: {const.EXPECTED_ENTITIES['ues']}")
+        print(f"   Measurement interval: {const.MEAS_INTERVAL_SEC}s")
+        print(f"   Window size: {const.WINDOW_SPECS['size_minutes']} minutes")
+        print(f"   Total records per window: {const.WINDOW_SPECS['expected_records']['total_per_window']}")
         
-        # Test band configs
-        print("CWD:", os.getcwd())
-        with open('config/band_configs.json', 'r') as f:
-            band_config = json.load(f)
-        print(f"✅ Band config loaded: {len(band_config['band_specifications'])} bands")
+        # Test band limits
+        print(f"   Band limits: {const.BAND_LIMITS}")
         
-        # Test drift thresholds
-        with open('config/drift_thresholds.yaml', 'r') as f:
-            drift_config = yaml.safe_load(f)
-        print(f"✅ Drift config loaded: significance threshold = {drift_config['drift_detection']['significance_threshold']}")
+        # Test drift parameters
+        print(f"   Drift threshold: {const.DRIFT_PARAMS['significance_threshold']}")
         
-        return True
+        print("   ✅ All values loaded correctly!")
         
     except Exception as e:
-        print(f"❌ Configuration test failed: {e}")
+        print(f"   ❌ Error accessing values: {e}")
         return False
+    
+    # Basic validation (FIXED - using const. prefix)
+    print("\n4. Basic validation...")
+    errors = []
+    
+    if const.EXPECTED_ENTITIES['cells'] != 52:
+        errors.append(f"Expected 52 cells, got {const.EXPECTED_ENTITIES['cells']}")
+    
+    if const.EXPECTED_ENTITIES['ues'] != 48:
+        errors.append(f"Expected 48 UEs, got {const.EXPECTED_ENTITIES['ues']}")
+        
+    if const.WINDOW_SPECS['expected_records']['total_per_window'] != 500:
+        errors.append(f"Expected 500 total records per window, got {const.WINDOW_SPECS['expected_records']['total_per_window']}")
+    
+    if errors:
+        print("   ❌ Validation errors:")
+        for error in errors:
+            print(f"      - {error}")
+        return False
+    else:
+        print("   ✅ All validations passed!")
+    
+    return True
+
+def main():
+    print("🔧 Configuration System Test")
+    print("=" * 50)
+    
+    success = test_config_system()
+    
+    print("\n" + "=" * 50)
+    if success:
+        print("✅ Configuration system working properly!")
+        print("🎯 Ready for next step: Create data inspector")
+    else:
+        print("❌ Configuration system has issues")
+        print("Fix the errors above before proceeding")
 
 if __name__ == "__main__":
-    print("Testing foundation files...")
-    
-    imports_ok = test_imports()
-    configs_ok = test_configurations()
-    
-    if imports_ok and configs_ok:
-        print("\n🎉 Foundation setup successful!")
-        print("Ready to proceed with Phase 1 implementation")
-    else:
-        print("\n⚠️  Foundation setup has issues - fix before proceeding")
+    main()

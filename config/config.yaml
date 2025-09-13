@@ -12,8 +12,8 @@ framework:
 data_sources:
   viavi_dataset:
     enabled: true
-    cell_reports_file: "data/raw/CellReports.csv"
-    ue_reports_file: "data/raw/UEReports-flow.csv"
+    cell_reports_file: "data/raw/CellReports_v0.csv"
+    ue_reports_file: "data/raw/UEReports_v0.csv"
     expected_entities:
       cells: 52
       ues: 48

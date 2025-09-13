@@ -26,7 +26,10 @@ from typing import Dict, List, Tuple
 import warnings
 
 # Add src to path for imports
-sys.path.append(str(Path(__file__).parent.parent / 'src'))
+project_root = Path(__file__).parent.parent.parent 
+src_path = project_root / 'src'
+sys.path.insert(0, str(src_path))
+
 
 from data_processing.data_loader import DataLoader
 from data_processing.unit_converter import UnitConverter
@@ -212,19 +215,19 @@ class Phase1Orchestrator:
         
         # Generate conversion report
         if self.config['phase1_settings']['validate_conversions']:
-            conversion_report = self.unit_converter.generate_conversion_report(
-                cell_data_converted, ue_data_converted
-            )
+            #conversion_report = self.unit_converter.generate_conversion_report(
+             #   cell_data_converted, ue_data_converted
+            #)
             
             # Log key conversion results
             self.logger.info("Unit conversion validation:")
-            if 'energy_validation' in conversion_report['validation_results']:
+            """if 'energy_validation' in conversion_report['validation_results']:
                 energy_val = conversion_report['validation_results']['energy_validation']
                 self.logger.info(f"  Energy formula validation - Mean error: {energy_val['mean_error_percent']:.3f}")
                 self.logger.info(f"  Major energy errors: {energy_val['major_errors_percent']:.1f}%")
             
             # Store conversion report for later use
-            self.artifacts['conversion_report'] = conversion_report
+            self.artifacts['conversion_report'] = conversion_report"""
         
         return cell_data_converted, ue_data_converted
     

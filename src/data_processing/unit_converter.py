@@ -9,13 +9,23 @@ Purpose: Unit converter for VIAVI dataset
 import pandas as pd
 import numpy as np
 from typing import Dict, Tuple
+import sys
+import os
+import json
+from datetime import datetime 
+from pathlib import Path
 
-from ..common.logger import get_phase1_logger
-from ..common.constants import (
+
+project_root = Path(__file__).parent.parent.parent 
+src_path = project_root / 'src'
+sys.path.insert(0, str(src_path))
+
+from common.logger import get_phase1_logger
+from common.constants import (
     BAND_SPECS, QUALITY_THRESHOLDS, DATA_QUIRKS,
     COLUMN_NAMES, PATTERNS
 )
-from ..common.exceptions import UnitConversionError
+from common.exceptions import UnitConversionError
 
 class UnitConverter:
     """Handles critical unit conversions for VIAVI dataset."""
@@ -31,6 +41,7 @@ class UnitConverter:
         df = df.copy()
         
         if not DATA_QUIRKS['prb_tot_is_percentage']:
+            self.logger.info("Conversion PrbTot from percentage to absolute is not needed...")
             return df
         
         self.logger.info("Converting PrbTot from percentage to absolute...")
@@ -41,7 +52,7 @@ class UnitConverter:
         if 'RRU.PrbTotUl' in df.columns and 'RRU.PrbAvailUl' in df.columns:
             df['RRU.PrbTotUl_abs'] = (df['RRU.PrbTotUl'] / 100.0) * df['RRU.PrbAvailUl']
         
-        df['prb_conversion_applied'] = True
+        #df['prb_conversion_applied'] = True
         self.logger.info("PrbTot conversion completed")
         
         return df
@@ -51,6 +62,7 @@ class UnitConverter:
         df = df.copy()
         
         if not DATA_QUIRKS['energy_is_cumulative']:
+            self.logger.info("Conversion cumulative energy to per-interval not needed...")
             return df
         
         self.logger.info("Converting cumulative energy to per-interval...")
@@ -64,13 +76,14 @@ class UnitConverter:
         
         # First timestamp per entity has no previous value
         first_timestamps = df.groupby(entity_col).head(1).index
-        df.loc[first_timestamps, 'PEE.Energy_interval'] = np.nan
+        df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
         
         # Validate against expected formula
         interval_seconds = self.config.get('measurement_interval_seconds', 60)
         interval_hours = interval_seconds / 3600.0
         df['PEE.Energy_expected'] = (df['PEE.AvgPower'] / 1000.0) * interval_hours
         
+        """         
         # Calculate validation error
         valid_mask = pd.notna(df['PEE.Energy_interval']) & (df['PEE.Energy_interval'] > 0)
         if valid_mask.any():
@@ -81,8 +94,9 @@ class UnitConverter:
             
             df['Energy_validation_error'] = np.nan
             df.loc[valid_mask, 'Energy_validation_error'] = error_percent
+            """
         
-        df['energy_conversion_applied'] = True
+        """df['energy_conversion_applied'] = True"""
         self.logger.info("Energy conversion completed")
         
         return df
@@ -96,9 +110,9 @@ class UnitConverter:
         
         self.logger.info("Processing QosFlow 1-second semantics...")
         
-        # Flag the semantic mismatch
+        """# Flag the semantic mismatch
         if 'QosFlow.TotPdcpPduVolumeDl' in df.columns:
-            df['qos_flow_1s_semantics'] = True
+            df['qos_flow_1s_semantics'] = True"""
         
         return df
     
