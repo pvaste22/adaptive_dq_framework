@@ -1,0 +1,55 @@
+{
+  "completeness": {
+    "expected_cell_records_per_window": 260.0,
+    "expected_ue_records_per_window": 240.0,
+    "expected_total_records_per_window": 500.0,
+    "minimum_completeness_ratio": 0.95
+  },
+  "consistency": {
+    "physical_rules": {
+      "prb_band_limits": {
+        "B2": {
+          "prb_count": 100,
+          "name": "LTE Band 2"
+        },
+        "B13": {
+          "prb_count": 75,
+          "name": "LTE Band 13"
+        },
+        "N77": {
+          "prb_count": 273,
+          "name": "5G NR Band 77"
+        }
+      },
+      "mean_le_max_tolerance": 0.01,
+      "min_le_mean_tolerance": 0.01
+    },
+    "correlation_tolerances": {
+      "prb_throughput_tolerance": 0.3,
+      "power_load_tolerance": 0.3,
+      "connections_throughput_tolerance": 0.3
+    }
+  },
+  "accuracy": {
+    "z_score_threshold": 3.0,
+    "spectral_efficiency_max": 30.0,
+    "energy_validation_minor_threshold": 0.1,
+    "energy_validation_major_threshold": 0.2,
+    "pattern_deviation_threshold": 0.1
+  },
+  "timeliness": {
+    "expected_update_interval_seconds": 60,
+    "update_interval_tolerance_seconds": 5,
+    "staleness_detection_threshold": 3,
+    "ks_test_significance_level": 0.05
+  },
+  "skewness": {
+    "jsd_normal_threshold": 0.1,
+    "jsd_moderate_threshold": 0.3,
+    "distribution_bins": 50
+  },
+  "metadata": {
+    "creation_time": "2025-09-16T19:35:11.026276",
+    "source": "Phase 1 baseline creation"
+  }
+}

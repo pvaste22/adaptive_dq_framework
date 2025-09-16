@@ -26,7 +26,7 @@ import pickle
 from pathlib import Path
 
 # Add src to path for imports
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent.parent.parent
 src_path = project_root / 'src'
 sys.path.insert(0, str(src_path))
 
@@ -119,7 +119,7 @@ class Phase1Orchestrator:
                 # Step 3: Generate windows
                 self.logger.info("Step 3: Generating 5-minute windows...")
                 windows = self._step3_generate_windows(cell_data, ue_data)
-                results['step3'] = {'status': 'completed', 'windows_generated': len(windows)}
+                results['step3'] = {'status': 'completed', 'windows_generated': windows['window_count']}
             
                 # Step 4: Create baselines
                 self.logger.info("Step 4: Creating baseline artifacts...")
@@ -392,6 +392,7 @@ class Phase1Orchestrator:
                     baselines['cell_metrics'][metric] = {
                         'mean': float(data.mean()),
                         'std': float(data.std()),
+                        'mad': float((data - data.median()).abs().median()),
                         'p5': float(data.quantile(0.05)),
                         'p25': float(data.quantile(0.25)),
                         'p50': float(data.quantile(0.50)),
@@ -410,6 +411,7 @@ class Phase1Orchestrator:
                     baselines['ue_metrics'][metric] = {
                         'mean': float(data.mean()),
                         'std': float(data.std()),
+                        'mad': float((data - data.median()).abs().median()),
                         'p5': float(data.quantile(0.05)),
                         'p25': float(data.quantile(0.25)),
                         'p50': float(data.quantile(0.50)),
@@ -740,6 +742,17 @@ class Phase1Orchestrator:
         # Save processed data
         processed_dir = self.paths['training']
         processed_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime(self.versioning['timestamp_format'])
+        artifact_formats = {
+            'statistical_baselines': 'pkl',
+            'historical_pdfs': 'pkl',  # or 'npz' if converted to numpy
+            'correlation_matrix': 'json',
+            'pattern_baselines': 'pkl',
+            'temporal_templates': 'pkl',
+            'quality_thresholds': 'json',
+            'metadata_config': 'json',
+            'sample_windows': 'json'
+        }
         
         cell_data.to_parquet(processed_dir / 'cell_data_processed.parquet')
         ue_data.to_parquet(processed_dir / 'ue_data_processed.parquet')
@@ -757,9 +770,17 @@ class Phase1Orchestrator:
             if artifact_data.get('status') == 'placeholder':
                 continue
                 
-            artifact_file = artifacts_dir / f'{artifact_name}_v1_{timestamp}.pkl'
-            with open(artifact_file, 'wb') as f:
-                pickle.dump(artifact_data, f)
+            artifact_subdir = artifacts_dir / artifact_name
+            artifact_subdir.mkdir(parents=True, exist_ok=True)
+            file_format = artifact_formats.get(artifact_name, 'pkl')
+            artifact_file = artifact_subdir / f'{artifact_name}_v1_{timestamp}.{file_format}'
+            if file_format == 'json':
+                with open(artifact_file, 'w') as f:
+                    json.dump(artifact_data, f, indent=2, default=str)
+            else: 
+                with open(artifact_file, 'wb') as f:
+                    pickle.dump(artifact_data, f)
+
             artifact_paths[artifact_name] = str(artifact_file)
         
         # Save sample windows

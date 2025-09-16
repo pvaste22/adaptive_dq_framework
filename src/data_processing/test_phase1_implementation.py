@@ -58,11 +58,15 @@ def test_data_loading_sample():
         loader = DataLoader()
         
         # Load just first 1000 rows for testing
+        cell1 = pd.read_csv(DATA_FILES['cell_reports'], low_memory=False)
+        print(f"dtypes: {cell1.dtypes}")
+        ue1= pd.read_csv(DATA_FILES['ue_reports'], low_memory=False)
+        print(f"dtypes: {ue1.dtypes}")
         cell_sample = pd.read_csv(DATA_FILES['cell_reports'], nrows=1000)
         ue_sample = pd.read_csv(DATA_FILES['ue_reports'], nrows=1000)
         
-        print(f"✓ Cell sample: {cell_sample.shape}")
-        print(f"✓ UE sample: {ue_sample.shape}")
+        print(f"✓ Cell sample: {cell_sample.shape}", "dtypes: {cell_sample.dtypes}")
+        print(f"✓ UE sample: {ue_sample.shape}", "dtypes: {ue_sample.dtypes}")
         
         # Test corrections
         cell_sample['timestamp'] = pd.to_datetime(cell_sample['timestamp'], unit='s')

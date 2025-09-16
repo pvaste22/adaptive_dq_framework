@@ -28,8 +28,9 @@ REQUIRED_DIRS = {
     'processed': DATA_DIR / 'processed',
     'artifacts': DATA_DIR / 'artifacts',
     'logs': DATA_DIR / 'logs',
-    'reports': PROJECT_ROOT / 'reports',
+    'reports': DATA_DIR / 'reports',
     'windows': DATA_DIR / 'processed' / 'windowed_data',
+    'historical_windows': DATA_DIR / 'processed' / 'historical_windows',
     'sample_windows': DATA_DIR / 'processed' / 'sample_windows', 
     'training': DATA_DIR / 'processed' / 'training' / 'v0'
 }
@@ -79,6 +80,17 @@ EXPECTED_PATTERNS = {
     'cqi_tolerance': PATTERN_TOLERANCES.get('cqi_zero_rate', 0.10),
     'symmetry_tolerance': PATTERN_TOLERANCES.get('ul_dl_symmetry', 0.15)
 }
+
+# Expected patterns
+#PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances', {})
+"""EXPECTED_PATTERNS = {
+    'mimo_zero_rate': 0.86,
+    'cqi_zero_rate': 0.60,
+    'ul_dl_symmetry': 0.87,
+    'mimo_tolerance': PATTERN_TOLERANCES.get('mimo_zero_rate', 0.10),
+    'cqi_tolerance': PATTERN_TOLERANCES.get('cqi_zero_rate', 0.10),
+    'symmetry_tolerance': PATTERN_TOLERANCES.get('ul_dl_symmetry', 0.15)
+}"""
 
 # Expected correlations
 EXPECTED_CORRELATIONS = []
@@ -174,17 +186,6 @@ DRIFT_PARAMS = {
     'pattern_tolerance': DRIFT_CONFIG.get('pattern_tolerances', {})
 }
 
-# Expected patterns
-PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances', {})
-EXPECTED_PATTERNS = {
-    'mimo_zero_rate': 0.86,
-    'cqi_zero_rate': 0.60,
-    'ul_dl_symmetry': 0.87,
-    'mimo_tolerance': PATTERN_TOLERANCES.get('mimo_zero_rate', 0.10),
-    'cqi_tolerance': PATTERN_TOLERANCES.get('cqi_zero_rate', 0.10),
-    'symmetry_tolerance': PATTERN_TOLERANCES.get('ul_dl_symmetry', 0.15)
-}
-
 # Paths
 PATHS = REQUIRED_DIRS
 
@@ -210,10 +211,10 @@ CELL_DTYPES = {
     'RRU.PrbAvailUl': 'uint16',
     'RRU.PrbTotDl': 'float32',
     'RRU.PrbTotUl': 'float32',
-    'RRU.MaxLayerDlMimo': 'uint8',
+    'RRU.MaxLayerDlMimo': 'float64',
     'CARR.AverageLayersDl': 'float32',
     'RRC.ConnMean': 'float32',
-    'RRC.ConnMax': 'uint8',
+    'RRC.ConnMax': 'float64',
     'QosFlow.TotPdcpPduVolumeDl': 'float64',
     'QosFlow.TotPdcpPduVolumeUl': 'float64',
     'PEE.AvgPower': 'float32',
@@ -223,8 +224,8 @@ CELL_DTYPES = {
 UE_DTYPES = {
     'timestamp': 'int64',
     'Viavi.UE.Name': 'category',
-    'DRB.UECqiDl': 'uint8',
-    'DRB.UECqiUl': 'uint8',
+    'DRB.UECqiDl': 'float64',
+    'DRB.UECqiUl': 'float64',
     'DRB.UEThpDl': 'float32',
     'DRB.UEThpUl': 'float32',
     'RRU.PrbUsedDl': 'float32',
