@@ -18,7 +18,47 @@ data_sources:
       cells: 52
       ues: 48
     measurement_interval_seconds: 60
-    
+
+dataset_expectations:
+  # Expected patterns from VIAVI dataset analysis
+  patterns:
+    mimo_zero_rate: 
+      expected: 0.86
+      description: "Fraction of records with MIMO disabled"
+    cqi_no_measurement_rate:
+      expected: 0.60
+      description: "Fraction of UE records with no CQI measurement"
+    ul_dl_symmetry:
+      expected: 0.87
+      description: "Correlation between UL and DL throughput"
+  
+  # Expected correlations between metrics
+  correlations:
+    prb_dl_to_throughput_dl:
+      metrics: ['RRU.PrbUsedDl', 'DRB.UEThpDl']
+      expected: 0.85
+      tolerance: 0.30
+    power_to_prb_dl:
+      metrics: ['PEE.AvgPower', 'RRU.PrbUsedDl'] 
+      expected: 0.72
+      tolerance: 0.30
+    connections_to_throughput:
+      metrics: ['RRC.ConnMean', 'DRB.UEThpDl']
+      expected: 0.68
+      tolerance: 0.30
+  
+  # Temporal patterns
+  temporal:
+    minute_variation_coefficient: 0.15
+    hour_variation_coefficient: 0.30
+    peak_hour_percentile: 0.70  # Top 30% load hours are peak
+  
+  # Physical/protocol limits (never change)
+  physical_limits:
+    cqi_range: [0, 15]
+    spectral_efficiency_max: 30.0  # bps/Hz theoretical limit
+    connection_max: 255
+        
     # Column mappings
     column_names:
       timestamp: 'timestamp'

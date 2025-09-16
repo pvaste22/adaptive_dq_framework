@@ -1,7 +1,16 @@
+"""
+Module: Common
+Phase: All
+Author: Pranjal V
+Created: 06/09/2025
+Purpose: Custom exception classes for the framework
+"""
 
 class DataQualityFrameworkError(Exception):
     """Base exception for all framework errors."""
-    pass
+    def __init__(self, message: str, error_code: str = None):
+        super().__init__(message)
+        self.error_code = error_code
 
 class DataLoadingError(DataQualityFrameworkError):
     """Raised when data loading fails."""

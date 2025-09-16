@@ -5,8 +5,8 @@ drift_detection:
   min_history_size: 100
   max_history_size: 1000
   
-  window_size_minutes: 5
-  sliding_step_minutes: 2
+  #window_size_minutes: 5
+  #sliding_step_minutes: 2
   
   distribution_bins: 50
   jsd_calculation_method: "histogram"

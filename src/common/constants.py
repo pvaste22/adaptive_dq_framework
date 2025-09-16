@@ -1,125 +1,204 @@
 """
 Module: Data Processing
-Phase: 1
+Phase: 1 
 Author: Pranjal V
 Created: 06/09/2025
-Purpose: Centralized configuration constants
+Purpose: Centralized configuration constants - Single source of truth
 """
 import json
 import yaml
 from pathlib import Path
+import os
+import sys
 
-# Project root
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+# Project root - more robust path handling
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+# Add src to Python path for imports
+sys.path.insert(0, str(PROJECT_ROOT / 'src'))
 
 # Configuration paths
 CONFIG_DIR = PROJECT_ROOT / 'config'
 DATA_DIR = PROJECT_ROOT / 'data'
 
+# Ensure critical directories exist
+REQUIRED_DIRS = {
+    'config': CONFIG_DIR,
+    'raw_data': DATA_DIR / 'raw',
+    'processed': DATA_DIR / 'processed',
+    'artifacts': DATA_DIR / 'artifacts',
+    'logs': DATA_DIR / 'logs',
+    'reports': PROJECT_ROOT / 'reports',
+    'windows': DATA_DIR / 'processed' / 'windowed_data',
+    'sample_windows': DATA_DIR / 'processed' / 'sample_windows', 
+    'training': DATA_DIR / 'processed' / 'training' / 'v0'
+}
+
+for name, dir_path in REQUIRED_DIRS.items():
+    dir_path.mkdir(parents=True, exist_ok=True)
+
+# Configuration file paths
 MAIN_CONFIG_PATH = CONFIG_DIR / 'config.yaml'
 BAND_CONFIG_PATH = CONFIG_DIR / 'band_configs.json'
 DRIFT_CONFIG_PATH = CONFIG_DIR / 'drift_thresholds.yaml'
+LOGGING_CONFIG_PATH = CONFIG_DIR / 'logging_config.yaml'
 
-# Load configurations
-def _load_main_config():
-    with open(MAIN_CONFIG_PATH, 'r') as f:
-        return yaml.safe_load(f)
+# Load configurations with error handling
+def _load_config_safe(path, loader='yaml'):
+    """Safely load configuration file with error handling."""
+    if not path.exists():
+        print(f"Warning: Config file not found: {path}")
+        return {}
+    
+    try:
+        with open(path, 'r') as f:
+            if loader == 'yaml':
+                return yaml.safe_load(f)
+            elif loader == 'json':
+                return json.load(f)
+    except Exception as e:
+        print(f"Error loading {path}: {e}")
+        return {}
 
-def _load_band_configs():
-    with open(BAND_CONFIG_PATH, 'r') as f:
-        config = json.load(f)
-    return config['band_specifications']
+# Load all configurations
+MAIN_CONFIG = _load_config_safe(MAIN_CONFIG_PATH, 'yaml')
+BAND_CONFIG_FULL = _load_config_safe(BAND_CONFIG_PATH, 'json')
+BAND_SPECS = BAND_CONFIG_FULL.get('band_specifications', {}) if BAND_CONFIG_FULL else {}
+DRIFT_CONFIG = _load_config_safe(DRIFT_CONFIG_PATH, 'yaml')
 
-def _load_drift_config():
-    with open(DRIFT_CONFIG_PATH, 'r') as f:
-        return yaml.safe_load(f)
-
-MAIN_CONFIG = _load_main_config()
-BAND_SPECS = _load_band_configs()
-DRIFT_CONFIG = _load_drift_config()
-
-# Dataset specifications
-VIAVI_CONFIG = MAIN_CONFIG['data_sources']['viavi_dataset']
-EXPECTED_ENTITIES = {
-    'cells': VIAVI_CONFIG['expected_entities']['cells'],
-    'ues': VIAVI_CONFIG['expected_entities']['ues']
+# Dataset expectations from config
+DATASET_EXPECTATIONS = MAIN_CONFIG.get('dataset_expectations', {})
+PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances')
+# Expected patterns with tolerances
+EXPECTED_PATTERNS = {
+    'mimo_zero_rate': DATASET_EXPECTATIONS.get('patterns', {}).get('mimo_zero_rate', {}).get('expected', 0.86),
+    'cqi_no_measurement_rate': DATASET_EXPECTATIONS.get('patterns', {}).get('cqi_no_measurement_rate', {}).get('expected', 0.60),
+    'ul_dl_symmetry': DATASET_EXPECTATIONS.get('patterns', {}).get('ul_dl_symmetry', {}).get('expected', 0.87),
+    # Keep existing tolerances from DRIFT_CONFIG
+    'mimo_tolerance': PATTERN_TOLERANCES.get('mimo_zero_rate', 0.10),
+    'cqi_tolerance': PATTERN_TOLERANCES.get('cqi_zero_rate', 0.10),
+    'symmetry_tolerance': PATTERN_TOLERANCES.get('ul_dl_symmetry', 0.15)
 }
-MEAS_INTERVAL_SEC = VIAVI_CONFIG['measurement_interval_seconds']
+
+# Expected correlations
+EXPECTED_CORRELATIONS = []
+for corr_name, corr_data in DATASET_EXPECTATIONS.get('correlations', {}).items():
+    if 'metrics' in corr_data and len(corr_data['metrics']) == 2:
+        EXPECTED_CORRELATIONS.append((
+            corr_data['metrics'][0],
+            corr_data['metrics'][1],
+            corr_data.get('expected', 0.0),
+            corr_data.get('tolerance', 0.30)
+        ))
+
+# Temporal coefficients
+TEMPORAL_COEFFICIENTS = DATASET_EXPECTATIONS.get('temporal', {})
+
+# Physical limits
+PHYSICAL_LIMITS = DATASET_EXPECTATIONS.get('physical_limits', {})
+
+# Dataset specifications from main config
+VIAVI_CONFIG = MAIN_CONFIG.get('data_sources', {}).get('viavi_dataset', {})
+EXPECTED_ENTITIES = {
+    'cells': VIAVI_CONFIG.get('expected_entities', {}).get('cells', 52),
+    'ues': VIAVI_CONFIG.get('expected_entities', {}).get('ues', 48)
+}
+MEAS_INTERVAL_SEC = VIAVI_CONFIG.get('measurement_interval_seconds', 60)
+
+# File paths
+DATA_FILES = {
+    'cell_reports': DATA_DIR / 'raw' / 'CellReports_v0.csv',
+    'ue_reports': DATA_DIR / 'raw' / 'UEReports_v0.csv'
+}
 
 # Column names
-COLUMN_NAMES = VIAVI_CONFIG['column_names']
+COLUMN_NAMES = VIAVI_CONFIG.get('column_names', {
+    'timestamp': 'timestamp',
+    'cell_entity': 'Viavi.Cell.Name',
+    'ue_entity': 'Viavi.UE.Name'
+})
 
 # Metric groups
-METRIC_GROUPS = VIAVI_CONFIG['metric_groups']
+METRIC_GROUPS = VIAVI_CONFIG.get('metric_groups', {})
 
 # Data quirks
-DATA_QUIRKS = VIAVI_CONFIG['data_quirks']
+DATA_QUIRKS = VIAVI_CONFIG.get('data_quirks', {
+    'tb_counters_unreliable': True,
+    'cqi_zero_is_no_measurement': True,
+    'prb_tot_is_percentage': True,
+    'energy_is_cumulative': True,
+    'qos_flow_has_1s_semantics': True
+})
 
 # Band limits
 BAND_LIMITS = {
-    band: {'prb_count': spec['prb_count'], 'name': spec['name']} 
+    band: {'prb_count': spec.get('prb_count'), 'name': spec.get('name')} 
     for band, spec in BAND_SPECS.items()
 }
 
 # Window specifications
-WINDOW_CONFIG = MAIN_CONFIG['processing']['windowing']
+WINDOW_CONFIG = MAIN_CONFIG.get('processing', {}).get('windowing', {})
 WINDOW_SPECS = {
-    'size_minutes': WINDOW_CONFIG['size_minutes'],
-    'overlap_percent': WINDOW_CONFIG['overlap_percent'],
+    'size_minutes': WINDOW_CONFIG.get('size_minutes', 5),
+    'overlap_percent': WINDOW_CONFIG.get('overlap_percent', 40),
+    'min_completeness': WINDOW_CONFIG.get('minimum_completeness', 0.95),
     'expected_records': {
-        'cells_per_window': EXPECTED_ENTITIES['cells'] * WINDOW_CONFIG['size_minutes'],
-        'ues_per_window': EXPECTED_ENTITIES['ues'] * WINDOW_CONFIG['size_minutes'],
-        'total_per_window': (EXPECTED_ENTITIES['cells'] + EXPECTED_ENTITIES['ues']) * WINDOW_CONFIG['size_minutes']
+        'cells_per_window': EXPECTED_ENTITIES['cells'] * WINDOW_CONFIG.get('size_minutes', 5)* (60 / MEAS_INTERVAL_SEC),
+        'ues_per_window': EXPECTED_ENTITIES['ues'] * WINDOW_CONFIG.get('size_minutes', 5)* (60 / MEAS_INTERVAL_SEC),
+        'total_per_window': (EXPECTED_ENTITIES['cells'] + EXPECTED_ENTITIES['ues']) * WINDOW_CONFIG.get('size_minutes', 5)* (60 / MEAS_INTERVAL_SEC)
     }
 }
 
+# Unit conversion settings
+CONVERSION_CONFIG = MAIN_CONFIG.get('processing', {}).get('unit_conversion', {
+    'prb_percentage_to_absolute': True,
+    'energy_cumulative_to_interval': True,
+    'qos_flow_validation': True,
+    'validation_tolerance': 0.20
+})
+
 # Quality thresholds
-QUALITY_THRESHOLDS = {
-    'completeness_min_ratio': DRIFT_CONFIG['quality_thresholds']['completeness']['minimum_ratio'],
-    'z_score_outlier_threshold': DRIFT_CONFIG['quality_thresholds']['accuracy']['z_score_threshold'],
-    'spectral_efficiency_max': DRIFT_CONFIG['quality_thresholds']['accuracy']['spectral_efficiency_max'],
-    'energy_validation_tolerance': DRIFT_CONFIG['quality_thresholds']['accuracy']['energy_validation_tolerance']
+QUALITY_THRESHOLDS = DRIFT_CONFIG.get('quality_thresholds', {})
+QUALITY_THRESHOLDS_FLAT = {
+    'completeness_min_ratio': QUALITY_THRESHOLDS.get('completeness', {}).get('minimum_ratio', 0.95),
+    'z_score_outlier_threshold': QUALITY_THRESHOLDS.get('accuracy', {}).get('z_score_threshold', 3.0),
+    'spectral_efficiency_max': QUALITY_THRESHOLDS.get('accuracy', {}).get('spectral_efficiency_max', 30.0),
+    'energy_validation_tolerance': QUALITY_THRESHOLDS.get('accuracy', {}).get('energy_validation_tolerance', 0.20)
 }
 
 # Drift parameters
 DRIFT_PARAMS = {
-    'significance_threshold': DRIFT_CONFIG['drift_detection']['significance_threshold'],
-    'min_history_size': DRIFT_CONFIG['drift_detection']['min_history_size'],
-    'distribution_bins': DRIFT_CONFIG['drift_detection']['distribution_bins'],
-    'pattern_tolerance': DRIFT_CONFIG['pattern_tolerances']
+    'significance_threshold': DRIFT_CONFIG.get('drift_detection', {}).get('significance_threshold', 0.08),
+    'min_history_size': DRIFT_CONFIG.get('drift_detection', {}).get('min_history_size', 100),
+    'distribution_bins': DRIFT_CONFIG.get('drift_detection', {}).get('distribution_bins', 50),
+    'pattern_tolerance': DRIFT_CONFIG.get('pattern_tolerances', {})
 }
 
 # Expected patterns
-PATTERN_TOLERANCES = DRIFT_CONFIG['pattern_tolerances']
+PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances', {})
 EXPECTED_PATTERNS = {
     'mimo_zero_rate': 0.86,
     'cqi_zero_rate': 0.60,
     'ul_dl_symmetry': 0.87,
-    'mimo_tolerance': PATTERN_TOLERANCES['mimo_zero_rate'],
-    'cqi_tolerance': PATTERN_TOLERANCES['cqi_zero_rate'],
-    'symmetry_tolerance': PATTERN_TOLERANCES['ul_dl_symmetry']
+    'mimo_tolerance': PATTERN_TOLERANCES.get('mimo_zero_rate', 0.10),
+    'cqi_tolerance': PATTERN_TOLERANCES.get('cqi_zero_rate', 0.10),
+    'symmetry_tolerance': PATTERN_TOLERANCES.get('ul_dl_symmetry', 0.15)
 }
 
 # Paths
-STORAGE_CONFIG = MAIN_CONFIG['storage']
-PATHS = {
-    'raw_data': DATA_DIR / 'raw',
-    'processed_data': DATA_DIR / 'processed',
-    'artifacts': DATA_DIR / 'artifacts',
-    'logs': DATA_DIR / 'logs',
-    'config': CONFIG_DIR
-}
+PATHS = REQUIRED_DIRS
 
 # Versioning
+STORAGE_CONFIG = MAIN_CONFIG.get('storage', {})
 VERSIONING = {
     'initial_version': 'v0',
     'timestamp_format': '%Y%m%d_%H%M%S',
     'artifact_name_pattern': '{type}_v{version}_{timestamp}.{ext}',
-    'max_versions_keep': STORAGE_CONFIG['artifacts']['max_versions_keep'],
-    'compression_enabled': STORAGE_CONFIG['artifacts']['compression']
+    'max_versions_keep': STORAGE_CONFIG.get('artifacts', {}).get('max_versions_keep', 10),
+    'compression_enabled': STORAGE_CONFIG.get('artifacts', {}).get('compression', True)
 }
 
-# Data types for pandas (code-specific, not config)
+# Data types for pandas
 CELL_DTYPES = {
     'timestamp': 'int64',
     'Viavi.Cell.Name': 'category',
@@ -154,7 +233,7 @@ UE_DTYPES = {
     'TB.TotNbrUl': 'float32'
 }
 
-# Regex patterns (code-specific)
+# Regex patterns
 PATTERNS = {
     'cell_name_parser': r'(S\d+)/([^/]+)/(C\d+)',
     'band_extractor': r'S\d+/([^/]+)/C\d+',
