@@ -98,7 +98,6 @@ class DataLoader:
             )[0]
             self.logger.info(f"Extracted band information: {df['Band'].value_counts().to_dict()}")
         
-        # No CQI columns in cell data - those are UE-specific metrics
         
         return df
     
