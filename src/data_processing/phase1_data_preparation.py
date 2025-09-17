@@ -784,7 +784,7 @@ class Phase1Orchestrator:
             artifact_paths[artifact_name] = str(artifact_file)
         
         # Save sample windows
-        windows_dir = self.paths['windows']
+        windows_dir = self.paths['historical_windows']
         windows_dir.mkdir(parents=True, exist_ok=True)
         
         sample_windows = windows[:50] if len(windows) > 50 else windows
