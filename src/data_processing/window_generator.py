@@ -75,7 +75,7 @@ class WindowGenerator:
             window_ue = self._extract_window_data(ue_data, current_time, window_end)
             
             # Validate window
-            #validation_result = self._validate_window(window_cell, window_ue)
+            validation_result = self._validate_window(window_cell, window_ue)
             
             window = {
                 'window_id': f"window_{window_id:06d}_{current_time.strftime('%Y%m%d_%H%M%S')}",
@@ -85,14 +85,16 @@ class WindowGenerator:
                 'ue_data': window_ue,
                 'metadata': self._create_window_metadata(
                     window_cell, window_ue, 
-                    current_time, window_end
-                )
+                    current_time, window_end,
+                    validation_result['completeness']
+                    )
             }
             windows.append(window)
-            window_id += 1            
+            window_id += 1
+            
             current_time += step_size
         
-        self.logger.info(f"Generated {len(windows)} valid windows")
+        self.logger.info(f"Generated {len(windows)} valid windows, skipped {skipped_windows} incomplete windows")
         
         if len(windows) == 0:
             self.logger.warning("No valid windows generated - check data completeness")
@@ -109,7 +111,65 @@ class WindowGenerator:
         mask = (data['timestamp'] >= start_time) & (data['timestamp'] < end_time)
         return data[mask].copy()
     
-
+    def _validate_window(self, window_cell: pd.DataFrame, 
+                        window_ue: pd.DataFrame) -> Dict:
+        """Validate window completeness and quality."""
+        
+        # Calculate completeness
+        cell_count = len(window_cell)
+        ue_count = len(window_ue)
+        total_count = cell_count + ue_count
+        
+        expected_total = self.window_specs['expected_records']['total_per_window']
+        completeness = total_count / expected_total if expected_total > 0 else 0
+        
+        # Get minimum completeness threshold
+        min_completeness = self.window_specs.get('min_completeness', 0.95)
+        
+        # Check completeness
+        if completeness < min_completeness:
+            return {
+                'valid': False,
+                'reason': f"Low completeness: {completeness:.2%} < {min_completeness:.2%}",
+                'completeness': completeness
+            }
+        
+        # Check timestamp consistency
+        expected_timestamps = self.window_specs['size_minutes']
+        min_required_timestamps = int(expected_timestamps * 0.8)  # Allow 20% missing
+        
+        if not window_cell.empty:
+            cell_timestamps = window_cell['timestamp'].nunique()
+            if cell_timestamps < min_required_timestamps:
+                return {
+                    'valid': False,
+                    'reason': f"Insufficient cell timestamps: {cell_timestamps} < {min_required_timestamps}",
+                    'completeness': completeness
+                }
+        
+        if not window_ue.empty:
+            ue_timestamps = window_ue['timestamp'].nunique()
+            if ue_timestamps < min_required_timestamps:
+                return {
+                    'valid': False,
+                    'reason': f"Insufficient UE timestamps: {ue_timestamps} < {min_required_timestamps}",
+                    'completeness': completeness
+                }
+        
+        # Check for minimum data
+        if cell_count == 0 and ue_count == 0:
+            return {
+                'valid': False,
+                'reason': "Empty window - no data",
+                'completeness': 0
+            }
+        
+        return {
+            'valid': True,
+            'reason': "Valid window",
+            'completeness': completeness
+        }
+    
     def _create_window_metadata(self, window_cell: pd.DataFrame, 
                                window_ue: pd.DataFrame,
                                start_time: datetime,

@@ -2,607 +2,607 @@
   "sample_windows": [
     {
       "window_id": "window_000000_20221231_160000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000000_20221231_160000",
+      "path": "training/v0/windows/window_000000_20221231_160000",
       "start_time": "2022-12-31T16:00:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000033_20221231_173900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000033_20221231_173900",
+      "path": "training/v0/windows/window_000033_20221231_173900",
       "start_time": "2022-12-31T17:39:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000067_20221231_192100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000067_20221231_192100",
+      "path": "training/v0/windows/window_000067_20221231_192100",
       "start_time": "2022-12-31T19:21:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000101_20221231_210300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000101_20221231_210300",
+      "path": "training/v0/windows/window_000101_20221231_210300",
       "start_time": "2022-12-31T21:03:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000135_20221231_224500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000135_20221231_224500",
+      "path": "training/v0/windows/window_000135_20221231_224500",
       "start_time": "2022-12-31T22:45:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000169_20230101_002700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000169_20230101_002700",
+      "path": "training/v0/windows/window_000169_20230101_002700",
       "start_time": "2023-01-01T00:27:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000203_20230101_020900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000203_20230101_020900",
+      "path": "training/v0/windows/window_000203_20230101_020900",
       "start_time": "2023-01-01T02:09:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000237_20230101_035100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000237_20230101_035100",
+      "path": "training/v0/windows/window_000237_20230101_035100",
       "start_time": "2023-01-01T03:51:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000271_20230101_053300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000271_20230101_053300",
+      "path": "training/v0/windows/window_000271_20230101_053300",
       "start_time": "2023-01-01T05:33:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000305_20230101_071500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000305_20230101_071500",
+      "path": "training/v0/windows/window_000305_20230101_071500",
       "start_time": "2023-01-01T07:15:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000339_20230101_085700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000339_20230101_085700",
+      "path": "training/v0/windows/window_000339_20230101_085700",
       "start_time": "2023-01-01T08:57:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000373_20230101_103900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000373_20230101_103900",
+      "path": "training/v0/windows/window_000373_20230101_103900",
       "start_time": "2023-01-01T10:39:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000407_20230101_122100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000407_20230101_122100",
+      "path": "training/v0/windows/window_000407_20230101_122100",
       "start_time": "2023-01-01T12:21:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000440_20230101_140000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000440_20230101_140000",
+      "path": "training/v0/windows/window_000440_20230101_140000",
       "start_time": "2023-01-01T14:00:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000474_20230101_154200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000474_20230101_154200",
+      "path": "training/v0/windows/window_000474_20230101_154200",
       "start_time": "2023-01-01T15:42:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000508_20230101_172400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000508_20230101_172400",
+      "path": "training/v0/windows/window_000508_20230101_172400",
       "start_time": "2023-01-01T17:24:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000542_20230101_190600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000542_20230101_190600",
+      "path": "training/v0/windows/window_000542_20230101_190600",
       "start_time": "2023-01-01T19:06:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000576_20230101_204800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000576_20230101_204800",
+      "path": "training/v0/windows/window_000576_20230101_204800",
       "start_time": "2023-01-01T20:48:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000610_20230101_223000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000610_20230101_223000",
+      "path": "training/v0/windows/window_000610_20230101_223000",
       "start_time": "2023-01-01T22:30:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000644_20230102_001200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000644_20230102_001200",
+      "path": "training/v0/windows/window_000644_20230102_001200",
       "start_time": "2023-01-02T00:12:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000678_20230102_015400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000678_20230102_015400",
+      "path": "training/v0/windows/window_000678_20230102_015400",
       "start_time": "2023-01-02T01:54:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000712_20230102_033600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000712_20230102_033600",
+      "path": "training/v0/windows/window_000712_20230102_033600",
       "start_time": "2023-01-02T03:36:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000746_20230102_051800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000746_20230102_051800",
+      "path": "training/v0/windows/window_000746_20230102_051800",
       "start_time": "2023-01-02T05:18:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000780_20230102_070000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000780_20230102_070000",
+      "path": "training/v0/windows/window_000780_20230102_070000",
       "start_time": "2023-01-02T07:00:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000814_20230102_084200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000814_20230102_084200",
+      "path": "training/v0/windows/window_000814_20230102_084200",
       "start_time": "2023-01-02T08:42:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000847_20230102_102100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000847_20230102_102100",
+      "path": "training/v0/windows/window_000847_20230102_102100",
       "start_time": "2023-01-02T10:21:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000881_20230102_120300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000881_20230102_120300",
+      "path": "training/v0/windows/window_000881_20230102_120300",
       "start_time": "2023-01-02T12:03:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000915_20230102_134500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000915_20230102_134500",
+      "path": "training/v0/windows/window_000915_20230102_134500",
       "start_time": "2023-01-02T13:45:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000949_20230102_152700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000949_20230102_152700",
+      "path": "training/v0/windows/window_000949_20230102_152700",
       "start_time": "2023-01-02T15:27:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_000983_20230102_170900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_000983_20230102_170900",
+      "path": "training/v0/windows/window_000983_20230102_170900",
       "start_time": "2023-01-02T17:09:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001017_20230102_185100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001017_20230102_185100",
+      "path": "training/v0/windows/window_001017_20230102_185100",
       "start_time": "2023-01-02T18:51:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001051_20230102_203300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001051_20230102_203300",
+      "path": "training/v0/windows/window_001051_20230102_203300",
       "start_time": "2023-01-02T20:33:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001085_20230102_221500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001085_20230102_221500",
+      "path": "training/v0/windows/window_001085_20230102_221500",
       "start_time": "2023-01-02T22:15:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001119_20230102_235700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001119_20230102_235700",
+      "path": "training/v0/windows/window_001119_20230102_235700",
       "start_time": "2023-01-02T23:57:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001153_20230103_013900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001153_20230103_013900",
+      "path": "training/v0/windows/window_001153_20230103_013900",
       "start_time": "2023-01-03T01:39:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001187_20230103_032100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001187_20230103_032100",
+      "path": "training/v0/windows/window_001187_20230103_032100",
       "start_time": "2023-01-03T03:21:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001221_20230103_050300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001221_20230103_050300",
+      "path": "training/v0/windows/window_001221_20230103_050300",
       "start_time": "2023-01-03T05:03:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001255_20230103_064500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001255_20230103_064500",
+      "path": "training/v0/windows/window_001255_20230103_064500",
       "start_time": "2023-01-03T06:45:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001288_20230103_082400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001288_20230103_082400",
+      "path": "training/v0/windows/window_001288_20230103_082400",
       "start_time": "2023-01-03T08:24:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001322_20230103_100600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001322_20230103_100600",
+      "path": "training/v0/windows/window_001322_20230103_100600",
       "start_time": "2023-01-03T10:06:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001356_20230103_114800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001356_20230103_114800",
+      "path": "training/v0/windows/window_001356_20230103_114800",
       "start_time": "2023-01-03T11:48:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001390_20230103_133000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001390_20230103_133000",
+      "path": "training/v0/windows/window_001390_20230103_133000",
       "start_time": "2023-01-03T13:30:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001424_20230103_151200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001424_20230103_151200",
+      "path": "training/v0/windows/window_001424_20230103_151200",
       "start_time": "2023-01-03T15:12:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001458_20230103_165400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001458_20230103_165400",
+      "path": "training/v0/windows/window_001458_20230103_165400",
       "start_time": "2023-01-03T16:54:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001492_20230103_183600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001492_20230103_183600",
+      "path": "training/v0/windows/window_001492_20230103_183600",
       "start_time": "2023-01-03T18:36:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001526_20230103_201800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001526_20230103_201800",
+      "path": "training/v0/windows/window_001526_20230103_201800",
       "start_time": "2023-01-03T20:18:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001560_20230103_220000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001560_20230103_220000",
+      "path": "training/v0/windows/window_001560_20230103_220000",
       "start_time": "2023-01-03T22:00:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001594_20230103_234200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001594_20230103_234200",
+      "path": "training/v0/windows/window_001594_20230103_234200",
       "start_time": "2023-01-03T23:42:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001628_20230104_012400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001628_20230104_012400",
+      "path": "training/v0/windows/window_001628_20230104_012400",
       "start_time": "2023-01-04T01:24:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001662_20230104_030600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001662_20230104_030600",
+      "path": "training/v0/windows/window_001662_20230104_030600",
       "start_time": "2023-01-04T03:06:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001695_20230104_044500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001695_20230104_044500",
+      "path": "training/v0/windows/window_001695_20230104_044500",
       "start_time": "2023-01-04T04:45:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001729_20230104_062700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001729_20230104_062700",
+      "path": "training/v0/windows/window_001729_20230104_062700",
       "start_time": "2023-01-04T06:27:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001763_20230104_080900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001763_20230104_080900",
+      "path": "training/v0/windows/window_001763_20230104_080900",
       "start_time": "2023-01-04T08:09:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001797_20230104_095100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001797_20230104_095100",
+      "path": "training/v0/windows/window_001797_20230104_095100",
       "start_time": "2023-01-04T09:51:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001831_20230104_113300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001831_20230104_113300",
+      "path": "training/v0/windows/window_001831_20230104_113300",
       "start_time": "2023-01-04T11:33:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001865_20230104_131500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001865_20230104_131500",
+      "path": "training/v0/windows/window_001865_20230104_131500",
       "start_time": "2023-01-04T13:15:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001899_20230104_145700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001899_20230104_145700",
+      "path": "training/v0/windows/window_001899_20230104_145700",
       "start_time": "2023-01-04T14:57:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001933_20230104_163900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001933_20230104_163900",
+      "path": "training/v0/windows/window_001933_20230104_163900",
       "start_time": "2023-01-04T16:39:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_001967_20230104_182100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_001967_20230104_182100",
+      "path": "training/v0/windows/window_001967_20230104_182100",
       "start_time": "2023-01-04T18:21:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002001_20230104_200300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002001_20230104_200300",
+      "path": "training/v0/windows/window_002001_20230104_200300",
       "start_time": "2023-01-04T20:03:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002035_20230104_214500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002035_20230104_214500",
+      "path": "training/v0/windows/window_002035_20230104_214500",
       "start_time": "2023-01-04T21:45:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002069_20230104_232700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002069_20230104_232700",
+      "path": "training/v0/windows/window_002069_20230104_232700",
       "start_time": "2023-01-04T23:27:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002102_20230105_010600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002102_20230105_010600",
+      "path": "training/v0/windows/window_002102_20230105_010600",
       "start_time": "2023-01-05T01:06:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002136_20230105_024800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002136_20230105_024800",
+      "path": "training/v0/windows/window_002136_20230105_024800",
       "start_time": "2023-01-05T02:48:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002170_20230105_043000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002170_20230105_043000",
+      "path": "training/v0/windows/window_002170_20230105_043000",
       "start_time": "2023-01-05T04:30:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002204_20230105_061200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002204_20230105_061200",
+      "path": "training/v0/windows/window_002204_20230105_061200",
       "start_time": "2023-01-05T06:12:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002238_20230105_075400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002238_20230105_075400",
+      "path": "training/v0/windows/window_002238_20230105_075400",
       "start_time": "2023-01-05T07:54:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002272_20230105_093600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002272_20230105_093600",
+      "path": "training/v0/windows/window_002272_20230105_093600",
       "start_time": "2023-01-05T09:36:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002306_20230105_111800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002306_20230105_111800",
+      "path": "training/v0/windows/window_002306_20230105_111800",
       "start_time": "2023-01-05T11:18:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002340_20230105_130000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002340_20230105_130000",
+      "path": "training/v0/windows/window_002340_20230105_130000",
       "start_time": "2023-01-05T13:00:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002374_20230105_144200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002374_20230105_144200",
+      "path": "training/v0/windows/window_002374_20230105_144200",
       "start_time": "2023-01-05T14:42:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002408_20230105_162400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002408_20230105_162400",
+      "path": "training/v0/windows/window_002408_20230105_162400",
       "start_time": "2023-01-05T16:24:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002442_20230105_180600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002442_20230105_180600",
+      "path": "training/v0/windows/window_002442_20230105_180600",
       "start_time": "2023-01-05T18:06:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002476_20230105_194800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002476_20230105_194800",
+      "path": "training/v0/windows/window_002476_20230105_194800",
       "start_time": "2023-01-05T19:48:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002510_20230105_213000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002510_20230105_213000",
+      "path": "training/v0/windows/window_002510_20230105_213000",
       "start_time": "2023-01-05T21:30:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002543_20230105_230900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002543_20230105_230900",
+      "path": "training/v0/windows/window_002543_20230105_230900",
       "start_time": "2023-01-05T23:09:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002577_20230106_005100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002577_20230106_005100",
+      "path": "training/v0/windows/window_002577_20230106_005100",
       "start_time": "2023-01-06T00:51:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002611_20230106_023300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002611_20230106_023300",
+      "path": "training/v0/windows/window_002611_20230106_023300",
       "start_time": "2023-01-06T02:33:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002645_20230106_041500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002645_20230106_041500",
+      "path": "training/v0/windows/window_002645_20230106_041500",
       "start_time": "2023-01-06T04:15:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002679_20230106_055700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002679_20230106_055700",
+      "path": "training/v0/windows/window_002679_20230106_055700",
       "start_time": "2023-01-06T05:57:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002713_20230106_073900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002713_20230106_073900",
+      "path": "training/v0/windows/window_002713_20230106_073900",
       "start_time": "2023-01-06T07:39:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002747_20230106_092100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002747_20230106_092100",
+      "path": "training/v0/windows/window_002747_20230106_092100",
       "start_time": "2023-01-06T09:21:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002781_20230106_110300",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002781_20230106_110300",
+      "path": "training/v0/windows/window_002781_20230106_110300",
       "start_time": "2023-01-06T11:03:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002815_20230106_124500",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002815_20230106_124500",
+      "path": "training/v0/windows/window_002815_20230106_124500",
       "start_time": "2023-01-06T12:45:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002849_20230106_142700",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002849_20230106_142700",
+      "path": "training/v0/windows/window_002849_20230106_142700",
       "start_time": "2023-01-06T14:27:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002883_20230106_160900",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002883_20230106_160900",
+      "path": "training/v0/windows/window_002883_20230106_160900",
       "start_time": "2023-01-06T16:09:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002917_20230106_175100",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002917_20230106_175100",
+      "path": "training/v0/windows/window_002917_20230106_175100",
       "start_time": "2023-01-06T17:51:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002950_20230106_193000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002950_20230106_193000",
+      "path": "training/v0/windows/window_002950_20230106_193000",
       "start_time": "2023-01-06T19:30:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_002984_20230106_211200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_002984_20230106_211200",
+      "path": "training/v0/windows/window_002984_20230106_211200",
       "start_time": "2023-01-06T21:12:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003018_20230106_225400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003018_20230106_225400",
+      "path": "training/v0/windows/window_003018_20230106_225400",
       "start_time": "2023-01-06T22:54:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003052_20230107_003600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003052_20230107_003600",
+      "path": "training/v0/windows/window_003052_20230107_003600",
       "start_time": "2023-01-07T00:36:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003086_20230107_021800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003086_20230107_021800",
+      "path": "training/v0/windows/window_003086_20230107_021800",
       "start_time": "2023-01-07T02:18:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003120_20230107_040000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003120_20230107_040000",
+      "path": "training/v0/windows/window_003120_20230107_040000",
       "start_time": "2023-01-07T04:00:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003154_20230107_054200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003154_20230107_054200",
+      "path": "training/v0/windows/window_003154_20230107_054200",
       "start_time": "2023-01-07T05:42:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003188_20230107_072400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003188_20230107_072400",
+      "path": "training/v0/windows/window_003188_20230107_072400",
       "start_time": "2023-01-07T07:24:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003222_20230107_090600",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003222_20230107_090600",
+      "path": "training/v0/windows/window_003222_20230107_090600",
       "start_time": "2023-01-07T09:06:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003256_20230107_104800",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003256_20230107_104800",
+      "path": "training/v0/windows/window_003256_20230107_104800",
       "start_time": "2023-01-07T10:48:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003290_20230107_123000",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003290_20230107_123000",
+      "path": "training/v0/windows/window_003290_20230107_123000",
       "start_time": "2023-01-07T12:30:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003324_20230107_141200",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003324_20230107_141200",
+      "path": "training/v0/windows/window_003324_20230107_141200",
       "start_time": "2023-01-07T14:12:00",
       "completeness": 1.0
     },
     {
       "window_id": "window_003358_20230107_155400",
-      "path": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/windows/window_003358_20230107_155400",
+      "path": "training/v0/windows/window_003358_20230107_155400",
       "start_time": "2023-01-07T15:54:00",
       "completeness": 1.0
     }
   ],
   "metadata": {
-    "creation_time": "2025-09-16T19:35:11.026355",
+    "creation_time": "2025-09-18T20:22:25.980309",
     "total_available_windows": 100,
     "samples_taken": 100,
     "sampling_method": "evenly_distributed"
