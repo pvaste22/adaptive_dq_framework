@@ -309,8 +309,10 @@ class Phase1Orchestrator:
                 n_samples = min(100, total_windows)
                 sample_indices = np.linspace(0, total_windows - 1, n_samples, dtype=int)
             
-                for idx in sample_indices:
+                for idx in sample_indices:                    
                     window_info = index['windows'][idx]
+                    abs_path = Path(window_info['path'])
+                    window_info['path'] = abs_path.relative_to(self.paths['processed'])
                     sample_windows.append(window_info)
         
         artifacts = {}
