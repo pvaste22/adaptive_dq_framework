@@ -174,7 +174,7 @@ class Phase1Orchestrator:
             data.to_parquet(checkpoint_dir / f'{step_name}_data.parquet')
             checkpoint['file'] = f'{step_name}_data.parquet'
         elif isinstance(data, tuple) and all(isinstance(d, pd.DataFrame) for d in data):
-            ata[0].to_parquet(checkpoint_dir / f'{step_name}_cell.parquet')
+            data[0].to_parquet(checkpoint_dir / f'{step_name}_cell.parquet')
             data[1].to_parquet(checkpoint_dir / f'{step_name}_ue.parquet')
             checkpoint['files'] = [f'{step_name}_cell.parquet', f'{step_name}_ue.parquet']
         else:
@@ -625,7 +625,7 @@ class Phase1Orchestrator:
         
         from common.constants import BAND_LIMITS, EXPECTED_ENTITIES, WINDOW_SPECS
         
-        thresholds = {
+        thresholds = { # change these later : take all from config files don't use harcoded values
             'completeness': {
                 'expected_cell_records_per_window': WINDOW_SPECS['expected_records']['cells_per_window'],
                 'expected_ue_records_per_window': WINDOW_SPECS['expected_records']['ues_per_window'],
@@ -638,7 +638,7 @@ class Phase1Orchestrator:
                     'mean_le_max_tolerance': 0.01,
                     'min_le_mean_tolerance': 0.01
                 },
-                'correlation_tolerances': {
+                'correlation_tolerances': { 
                     'prb_throughput_tolerance': 0.30,
                     'power_load_tolerance': 0.30,
                     'connections_throughput_tolerance': 0.30
