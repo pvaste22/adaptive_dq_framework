@@ -211,78 +211,16 @@ class WindowGenerator:
         
         return metadata
     
-    def save_windows(self, windows: List[Dict], output_path: Path):
-        """Save windows to disk in organized structure."""
-        
-        if not windows:
-            self.logger.warning("No windows to save")
-            return
-        
-        self.logger.info(f"Saving {len(windows)} windows to {output_path}")
-        
-        output_path.mkdir(parents=True, exist_ok=True)
-        
-        for window in windows:
-            window_dir = output_path / window['window_id']
-            window_dir.mkdir(exist_ok=True)
-            
-            # Save data
-            if not window['cell_data'].empty:
-                window['cell_data'].to_parquet(
-                    window_dir / 'cell_data.parquet', 
-                    compression='snappy'
-                )
-            
-            if not window['ue_data'].empty:
-                window['ue_data'].to_parquet(
-                    window_dir / 'ue_data.parquet', 
-                    compression='snappy'
-                )
-            
-            # Save metadata
-            metadata_to_save = {
-                'window_id': window['window_id'],
-                'start_time': window['start_time'].isoformat(),
-                'end_time': window['end_time'].isoformat(),
-                'metadata': window['metadata']
-            }
-            
-            with open(window_dir / 'metadata.json', 'w') as f:
-                json.dump(metadata_to_save, f, indent=2, default=str)
-        
-        # Create summary file
-        self._save_window_summary(windows, output_path)
-        
-        self.logger.info(f"Windows saved successfully to {output_path}")
+
     
     def _save_window_summary(self, windows: List[Dict], output_path: Path):
         """Save summary statistics for all windows."""
         if not windows:
             return
         
-        completeness_values = [w['metadata']['completeness']['total_completeness'] for w in windows]
+        #completeness_values = [w['metadata']['completeness']['total_completeness'] for w in windows]
         
-        summary = {
-            'total_windows': len(windows),
-            'generation_time': datetime.now().isoformat(),
-            'time_span': {
-                'start': min(w['start_time'] for w in windows).isoformat(),
-                'end': max(w['end_time'] for w in windows).isoformat(),
-                'total_hours': (max(w['end_time'] for w in windows) - min(w['start_time'] for w in windows)).total_seconds() / 3600
-            },
-            'completeness_stats': {
-                'mean': float(np.mean(completeness_values)),
-                'std': float(np.std(completeness_values)),
-                'min': float(np.min(completeness_values)),
-                'max': float(np.max(completeness_values)),
-                'median': float(np.median(completeness_values))
-            },
-            'record_stats': {
-                'mean_total_records': float(np.mean([w['metadata']['record_counts']['total'] for w in windows])),
-                'mean_cell_records': float(np.mean([w['metadata']['record_counts']['cells'] for w in windows])),
-                'mean_ue_records': float(np.mean([w['metadata']['record_counts']['ues'] for w in windows]))
-            }
-        }
+        summary = self.get_window_statistics(windows)
         
         with open(output_path / 'windows_summary.json', 'w') as f:
             json.dump(summary, f, indent=2, default=str)
@@ -307,6 +245,7 @@ class WindowGenerator:
                 'std': float(np.std(completeness_values)),
                 'min': float(np.min(completeness_values)),
                 'max': float(np.max(completeness_values)),
+                'median': float(np.median(completeness_values)),
                 'above_threshold': sum(1 for c in completeness_values if c >= self.window_specs.get('min_completeness', 0.95))
             },
             'record_counts': {

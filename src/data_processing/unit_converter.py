@@ -88,7 +88,17 @@ class UnitConverter:
         
         # First timestamp per entity has no previous value - use the cumulative value
         first_timestamps = df.groupby(entity_col).head(1).index
-        df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
+        #df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
+        if 'PEE.AvgPower' in df.columns:
+            # Calculate first interval's energy from power (Power × Time = Energy)
+            interval_hours = self.measurement_interval / 3600.0 # 60 seconds = 1/60 hour
+            df.loc[first_timestamps, 'PEE.Energy_interval'] = (
+                df.loc[first_timestamps, 'PEE.AvgPower'] / 1000.0 * interval_hours
+            )
+            self.logger.debug(f"Calculated first interval energy from average power for {len(first_timestamps)} cells")
+        else:
+            self.logger.warning("PEE.AvgPower not found - using cumulative value for first records (less accurate)")
+            df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
         
         # Optional: Calculate expected energy for future quality checks (but don't validate here)
         if 'PEE.AvgPower' in df.columns:
