@@ -368,7 +368,7 @@ class Phase1Orchestrator:
         # Key metrics for statistical analysis
         cell_metrics = [
             'RRU.PrbUsedDl', 'RRU.PrbUsedUl', 'DRB.UEThpDl', 'DRB.UEThpUl','RRU.PrbAvailDl', 'RRU.PrbAvailUl','RRU.PrbTotDl_abs', 'RRU.PrbTotUl_abs', 'PEE.Energy_interval',
-            'RRC.ConnMean', 'RRC.ConnMax', 'PEE.AvgPower','QosFlow.TotPdcpPduVolumeDl', 'QosFlow.TotPdcpPduVolumeUl', 'CARR.AverageLayersDl'
+            'RRC.ConnMean', 'RRC.ConnMax', 'PEE.AvgPower','QosFlow.TotPdcpPduVolumeDl', 'QosFlow.TotPdcpPduVolumeUl', 'CARR.AverageLayersDl', 'RRU.MaxLayerDlMimo'
         ]
         
         ue_metrics = [

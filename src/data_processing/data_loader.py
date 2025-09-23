@@ -132,19 +132,12 @@ class DataLoader:
     
     def get_data_summary(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
         """
-        Generate comprehensive summary statistics for loaded data.
-        
-        Args:
-            cell_data: Cell reports DataFrame
-            ue_data: UE reports DataFrame
-            
-        Returns:
-            Dictionary with summary statistics
+        Generate comprehensive summary statistics for loaded data. Args: cell_data: Cell reports DataFrame, ue_data: UE reports DataFrame. Returns: Dictionary with summary statistics
         """
         summary = {
             'cell_data': self._summarize_dataframe(cell_data, 'cell'),
             'ue_data': self._summarize_dataframe(ue_data, 'ue'),
-            'data_alignment': self._check_data_alignment(cell_data, ue_data),
+            #'data_alignment': self._check_data_alignment(cell_data, ue_data),
             'corrections_applied': self._summarize_corrections(cell_data, ue_data)
         }
         
@@ -165,7 +158,6 @@ class DataLoader:
         # Entity statistics
         if entity_col and entity_col in df.columns:
             summary['unique_entities'] = df[entity_col].nunique()
-            summary['entity_list'] = sorted(df[entity_col].unique().tolist())[:10]  # First 10
             if data_type == 'cell':
                 summary['expected_entities'] = self.expected_entities.get('cells', 52)
             else:
@@ -201,74 +193,8 @@ class DataLoader:
             'complete_columns': list(missing_counts[missing_counts == 0].index)
         }
         
-        # Key metrics statistics (sample) - adjusted for correct columns
-        key_metrics = {
-            'cell': ['RRU.PrbUsedDl', 'RRU.PrbUsedUl', 'DRB.UEThpDl', 'DRB.UEThpUl', 
-                     'RRC.ConnMean', 'PEE.AvgPower'],
-            'ue': ['DRB.UECqiDl', 'DRB.UECqiUl', 'DRB.UEThpDl', 'DRB.UEThpUl', 
-                   'RRU.PrbUsedDl', 'RRU.PrbUsedUl']
-        }
-        
-        metrics_stats = {}
-        for metric in key_metrics.get(data_type, []):
-            if metric in df.columns:
-                metric_data = df[metric].dropna()
-                if len(metric_data) > 0:
-                    metrics_stats[metric] = {
-                        'mean': float(metric_data.mean()),
-                        'std': float(metric_data.std()),
-                        'min': float(metric_data.min()),
-                        'max': float(metric_data.max()),
-                        'nulls': int(df[metric].isnull().sum()),
-                        'null_percent': float(df[metric].isnull().sum() / len(df) * 100)
-                    }
-        summary['key_metrics_stats'] = metrics_stats
-        
         return summary
     
-    def _check_data_alignment(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
-        """Check alignment between cell and UE data."""
-        alignment = {
-            'timestamp_overlap': {},
-            'record_count_ratio': {},
-            'time_synchronization': {}
-        }
-        
-        if 'timestamp' in cell_data.columns and 'timestamp' in ue_data.columns:
-            cell_timestamps = set(cell_data['timestamp'].unique())
-            ue_timestamps = set(ue_data['timestamp'].unique())
-            
-            common_timestamps = cell_timestamps.intersection(ue_timestamps)
-            
-            alignment['timestamp_overlap'] = {
-                'cell_unique_timestamps': len(cell_timestamps),
-                'ue_unique_timestamps': len(ue_timestamps),
-                'common_timestamps': len(common_timestamps),
-                'overlap_percentage': (len(common_timestamps) / max(len(cell_timestamps), len(ue_timestamps))) * 100 if cell_timestamps else 0,
-                'cell_only_timestamps': len(cell_timestamps - ue_timestamps),
-                'ue_only_timestamps': len(ue_timestamps - cell_timestamps)
-            }
-            
-            # Check if timestamps are synchronized
-            if common_timestamps:
-                alignment['time_synchronization']['synchronized'] = True
-                alignment['time_synchronization']['common_range'] = (
-                    str(min(common_timestamps)),
-                    str(max(common_timestamps))
-                )
-            else:
-                alignment['time_synchronization']['synchronized'] = False
-                alignment['time_synchronization']['issue'] = "No overlapping timestamps"
-        
-        # Record count analysis
-        alignment['record_count_ratio'] = {
-            'cell_records': len(cell_data),
-            'ue_records': len(ue_data),
-            'ratio': len(cell_data) / len(ue_data) if len(ue_data) > 0 else 0,
-            'expected_ratio': self.expected_entities['cells'] / self.expected_entities['ues']
-        }
-        
-        return alignment
     
     def _summarize_corrections(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
         """Summarize data corrections that were applied."""
