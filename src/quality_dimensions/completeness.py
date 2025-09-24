@@ -162,25 +162,31 @@ class CompletenessDimension(BaseDimension):
             Tuple of (score, measurement details)
         """
         details = {}
-        scores = []
-        
         # Check cells per timestamp
+        cell_presence_ratio = 0.0
         if self.timestamp_col in cell_data.columns and self.cell_entity_col in cell_data.columns:
             cells_per_timestamp = cell_data.groupby(self.timestamp_col)[self.cell_entity_col].nunique()
-            for timestamp, count in cells_per_timestamp.items():
-                ratio = count / self.expected_cells
-                scores.append(ratio)
-            details['avg_cell_presence_ratio'] = float(np.mean(scores)) if scores else 0.0
-        
+            cell_ratios = cells_per_timestamp / self.expected_cells  
+            cell_presence_ratio = cell_ratios.mean()  
+            details['avg_cell_presence_ratio'] = float(cell_presence_ratio)
+            self.logger.debug(f"Cell presence: {cells_per_timestamp.mean():.1f}/{self.expected_cells} cells per timestamp")
+        else:
+            self.logger.warning("Missing columns for cell entity presence check")
+    
         # Check UEs per timestamp
+        ue_presence_ratio = 0.0
         if self.timestamp_col in ue_data.columns and self.ue_entity_col in ue_data.columns:
             ues_per_timestamp = ue_data.groupby(self.timestamp_col)[self.ue_entity_col].nunique()
-            for timestamp, count in ues_per_timestamp.items():
-                ratio = count / self.expected_ues
-                scores.append(ratio)
-            details['avg_ue_presence_ratio'] = float(np.mean(scores)) if scores else 0.0
-        
-        score = np.mean(scores) if scores else 0.0
+            ue_ratios = ues_per_timestamp / self.expected_ues  
+            ue_presence_ratio = ue_ratios.mean()  
+            details['avg_ue_presence_ratio'] = float(ue_presence_ratio)
+            self.logger.debug(f"UE presence: {ues_per_timestamp.mean():.1f}/{self.expected_ues} UEs per timestamp")
+        else:
+            self.logger.warning("Missing columns for UE entity presence check")
+    
+        # Overall score is average of cell and UE presence
+        score = (cell_presence_ratio + ue_presence_ratio) / 2.0
+        self.logger.debug(f"Entity presence score: {score:.3f} (Cell: {cell_presence_ratio:.3f}, UE: {ue_presence_ratio:.3f})")
         return score, details
     
     def _score_time_continuity(self, cell_data: pd.DataFrame,
@@ -269,7 +275,7 @@ class CompletenessDimension(BaseDimension):
         if skip_fields:
             self.logger.debug(f"Skipping unreliable fields: {skip_fields}")
         
-        # Calculate completeness for each field
+        # Calculate completeness for each metric
         for col in cell_data.columns:
             if col not in skip_fields:
                 null_ratio = cell_data[col].isnull().sum() / len(cell_data) if len(cell_data) > 0 else 0

@@ -17,7 +17,7 @@ project_root = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(project_root))
 
 # Import from common modules
-from src.common.constants import (
+from common.constants import (
     COLUMN_NAMES,
     QUALITY_THRESHOLDS,
     PATHS
