@@ -42,13 +42,17 @@ class UnitConverter:
         # Convert DL PRBs
         if 'RRU.PrbTotDl' in df.columns and 'RRU.PrbAvailDl' in df.columns:
             # PrbTot is percentage (0-100), convert to absolute
-            df['RRU.PrbTotDl_abs'] = (df['RRU.PrbTotDl'] / 100.0) * df['RRU.PrbAvailDl']
+            valid = df['RRU.PrbAvailDl'].gt(0) & df['RRU.PrbTotDl'].notna()
+            df.loc[valid, 'RRU.PrbTotDl_abs'] = (df.loc[valid, 'RRU.PrbTotDl'] / 100.0) * df.loc[valid, 'RRU.PrbAvailDl']
+            #df['RRU.PrbTotDl_abs'] = (df['RRU.PrbTotDl'] / 100.0) * df['RRU.PrbAvailDl']
             conversions_applied += 1
             self.logger.debug(f"Converted PrbTotDl to absolute values")
         
         # Convert UL PRBs
         if 'RRU.PrbTotUl' in df.columns and 'RRU.PrbAvailUl' in df.columns:
-            df['RRU.PrbTotUl_abs'] = (df['RRU.PrbTotUl'] / 100.0) * df['RRU.PrbAvailUl']
+            valid = df['RRU.PrbAvailUl'].gt(0) & df['RRU.PrbTotUl'].notna()
+            df.loc[valid, 'RRU.PrbTotUl_abs'] = (df.loc[valid, 'RRU.PrbTotUl'] / 100.0) * df.loc[valid, 'RRU.PrbAvailUl']
+            #df['RRU.PrbTotUl_abs'] = (df['RRU.PrbTotUl'] / 100.0) * df['RRU.PrbAvailUl']
             conversions_applied += 1
             self.logger.debug(f"Converted PrbTotUl to absolute values")
         
@@ -82,30 +86,27 @@ class UnitConverter:
             return df
         
         df = df.sort_values([entity_col, 'timestamp'])
-        
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+        dt_hours = df.groupby(entity_col)['timestamp'].diff().dt.total_seconds().div(3600)
+        df['__dt_hours'] = dt_hours.fillna(self.measurement_interval / 3600.0).clip(lower=1e-9)
         # Calculate interval energy by differencing
         df['PEE.Energy_interval'] = df.groupby(entity_col)['PEE.Energy'].diff()
         
         # First timestamp per entity has no previous value - use the cumulative value
         first_timestamps = df.groupby(entity_col).head(1).index
-        #df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
+        df.loc[first_timestamps, 'PEE.Energy_interval'] = np.nan 
+        df['PEE.Energy_reset'] = df['PEE.Energy_interval'] < 0
+        df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
         if 'PEE.AvgPower' in df.columns:
+            df['PEE.Energy_expected'] = (df['PEE.AvgPower'] / 1000.0) * df['__dt_hours']
             # Calculate first interval's energy from power (Power × Time = Energy)
-            interval_hours = self.measurement_interval / 3600.0 # 60 seconds = 1/60 hour
-            df.loc[first_timestamps, 'PEE.Energy_interval'] = (
-                df.loc[first_timestamps, 'PEE.AvgPower'] / 1000.0 * interval_hours
-            )
+            df['PEE.Energy_interval'] = df['PEE.Energy_interval'].fillna(df['PEE.Energy_expected'])
             self.logger.debug(f"Calculated first interval energy from average power for {len(first_timestamps)} cells")
         else:
             self.logger.warning("PEE.AvgPower not found - using cumulative value for first records (less accurate)")
             df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
-        
-        # Optional: Calculate expected energy for future quality checks (but don't validate here)
-        if 'PEE.AvgPower' in df.columns:
-            interval_hours = self.measurement_interval / 3600.0
-            df['PEE.Energy_expected'] = (df['PEE.AvgPower'] / 1000.0) * interval_hours
-            self.logger.debug("Added expected energy column for future validation")
-        
+    
+        df.drop(columns=['__dt_hours'], inplace=True)
         df['energy_conversion_applied'] = True
         self.logger.info("Energy conversion completed")
         
