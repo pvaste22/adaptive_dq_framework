@@ -93,7 +93,7 @@ EXPECTED_PATTERNS = {
 }"""
 
 # Expected correlations
-EXPECTED_CORRELATIONS = []
+"""EXPECTED_CORRELATIONS = []
 for corr_name, corr_data in DATASET_EXPECTATIONS.get('correlations', {}).items():
     if 'metrics' in corr_data and len(corr_data['metrics']) == 2:
         EXPECTED_CORRELATIONS.append((
@@ -101,7 +101,7 @@ for corr_name, corr_data in DATASET_EXPECTATIONS.get('correlations', {}).items()
             corr_data['metrics'][1],
             corr_data.get('expected', 0.0),
             corr_data.get('tolerance', 0.30)
-        ))
+        ))"""
 
 # Temporal coefficients
 TEMPORAL_COEFFICIENTS = DATASET_EXPECTATIONS.get('temporal', {})
@@ -152,7 +152,7 @@ BAND_LIMITS = {
 WINDOW_CONFIG = MAIN_CONFIG.get('processing', {}).get('windowing', {})
 WINDOW_SPECS = {
     'size_minutes': WINDOW_CONFIG.get('size_minutes', 5),
-    'overlap_percent': WINDOW_CONFIG.get('overlap_percent', 40),
+    'overlap_percent': WINDOW_CONFIG.get('overlap_percent', 80),
     'min_completeness': WINDOW_CONFIG.get('minimum_completeness', 0.95),
     'expected_records': {
         'cells_per_window': EXPECTED_ENTITIES['cells'] * WINDOW_CONFIG.get('size_minutes', 5)* (60 / MEAS_INTERVAL_SEC),
@@ -240,4 +240,16 @@ PATTERNS = {
     'band_extractor': r'S\d+/([^/]+)/C\d+',
     'site_extractor': r'(S\d+)/[^/]+/C\d+',
     'cell_id_extractor': r'S\d+/[^/]+/(C\d+)'
+}
+
+SCORING_LEVELS = {
+    'PASS': 1.0,
+    'SOFT': 0.5,
+    'FAIL': 0.0
+}
+
+NEAR_ZERO_THRESHOLDS = {
+    'throughput_gbps': 0.001,  # < 1 Mbps considered ~0
+    'power_watts': 0.1,        # < 0.1 W considered ~0
+    'connections': 0           # Exactly 0 (no approximation)
 }

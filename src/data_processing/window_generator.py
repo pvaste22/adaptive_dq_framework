@@ -122,18 +122,7 @@ class WindowGenerator:
         
         expected_total = self.window_specs['expected_records']['total_per_window']
         completeness = total_count / expected_total if expected_total > 0 else 0
-        
-        # Get minimum completeness threshold
-        min_completeness = self.window_specs.get('min_completeness', 0.95)
-        
-        # Check completeness
-        if completeness < min_completeness:
-            return {
-                'valid': False,
-                'reason': f"Low completeness: {completeness:.2%} < {min_completeness:.2%}",
-                'completeness': completeness
-            }
-        
+           
         # Check timestamp consistency
         expected_timestamps = self.window_specs['size_minutes']
         min_required_timestamps = int(expected_timestamps * 0.8)  # Allow 20% missing

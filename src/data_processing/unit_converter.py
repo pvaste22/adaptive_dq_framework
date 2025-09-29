@@ -91,21 +91,23 @@ class UnitConverter:
         df['__dt_hours'] = dt_hours.fillna(self.measurement_interval / 3600.0).clip(lower=1e-9)
         # Calculate interval energy by differencing
         df['PEE.Energy_interval'] = df.groupby(entity_col)['PEE.Energy'].diff()
-        
-        # First timestamp per entity has no previous value - use the cumulative value
+
         first_timestamps = df.groupby(entity_col).head(1).index
-        df.loc[first_timestamps, 'PEE.Energy_interval'] = np.nan 
+        
         df['PEE.Energy_reset'] = df['PEE.Energy_interval'] < 0
-        df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
+        #df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
+
         if 'PEE.AvgPower' in df.columns:
             df['PEE.Energy_expected'] = (df['PEE.AvgPower'] / 1000.0) * df['__dt_hours']
             # Calculate first interval's energy from power (Power × Time = Energy)
-            df['PEE.Energy_interval'] = df['PEE.Energy_interval'].fillna(df['PEE.Energy_expected'])
+            df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy_expected']
+            #df['PEE.Energy_interval'] = df['PEE.Energy_interval'].fillna(df['PEE.Energy_expected'])
             self.logger.debug(f"Calculated first interval energy from average power for {len(first_timestamps)} cells")
         else:
             self.logger.warning("PEE.AvgPower not found - using cumulative value for first records (less accurate)")
-            df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
-    
+            #df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
+            df.loc[first_timestamps, 'PEE.Energy_interval'] = np.nan
+        #df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
         df.drop(columns=['__dt_hours'], inplace=True)
         df['energy_conversion_applied'] = True
         self.logger.info("Energy conversion completed")

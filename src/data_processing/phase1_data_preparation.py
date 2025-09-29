@@ -34,7 +34,7 @@ from data_processing.data_loader import DataLoader
 from data_processing.unit_converter import UnitConverter
 from data_processing.window_generator import WindowGenerator
 from common.logger import get_phase1_logger
-from common.constants import PATHS, VERSIONING
+from common.constants import PATHS, VERSIONING, COLUMN_NAMES
 
 class Phase1Orchestrator:
     """
@@ -52,10 +52,9 @@ class Phase1Orchestrator:
         self.artifacts_to_create = [
             'statistical_baselines',
             'historical_pdfs', 
-            'correlation_matrix',
             'pattern_baselines',
             'temporal_templates',
-            'quality_thresholds',
+            'field_ranges',
             'metadata_config',
             'sample_windows',
             'divergence_array_placeholder'
@@ -73,6 +72,7 @@ class Phase1Orchestrator:
         # Use paths from constants
         self.paths = PATHS
         self.versioning = VERSIONING
+        self.column_names = COLUMN_NAMES
     
     def _setup_logging(self) -> logging.Logger:
         """Setup logging for Phase 1"""
@@ -97,51 +97,44 @@ class Phase1Orchestrator:
         results = {}
         
         try:
-            #check if resuming
-            if resume_from:
-                self.logger.info(f"Attempting to resume from {resume_from}")
-                checkpoint_data = self._load_checkpoint(resume_from)
-                if checkpoint_data:
-                    self.logger.info(f"Resumed from checkpoint: {resume_from}")
-                # Set appropriate variables based on resume point
 
             # Step 1: Load and preprocess data
-            if not resume_from or resume_from == 'step1':
-                self.logger.info("Step 1: Loading and preprocessing data...")
-                cell_data, ue_data = self._step1_load_and_preprocess()
-                results['step1'] = {'status': 'completed', 'records': {'cells': len(cell_data), 'ues': len(ue_data)}}
+
+            self.logger.info("Step 1: Loading and preprocessing data...")
+            cell_data, ue_data = self._step1_load_and_preprocess()
+            results['step1'] = {'status': 'completed', 'records': {'cells': len(cell_data), 'ues': len(ue_data)}}
             
-                # Step 2: Apply unit conversions
-                self.logger.info("Step 2: Applying critical unit conversions...")
-                cell_data, ue_data = self._step2_apply_conversions(cell_data, ue_data)
-                results['step2'] = {'status': 'completed', 'conversions_applied': True}
+            # Step 2: Apply unit conversions
+            self.logger.info("Step 2: Applying critical unit conversions...")
+            cell_data, ue_data = self._step2_apply_conversions(cell_data, ue_data)
+            results['step2'] = {'status': 'completed', 'conversions_applied': True}
             
-                # Step 3: Generate windows
-                self.logger.info("Step 3: Generating 5-minute windows...")
-                windows = self._step3_generate_windows(cell_data, ue_data)
-                results['step3'] = {'status': 'completed', 'windows_generated': windows['window_count']}
+            # Step 3: Generate windows
+            self.logger.info("Step 3: Generating 5-minute windows...")
+            windows = self._step3_generate_windows(cell_data, ue_data)
+            results['step3'] = {'status': 'completed', 'windows_generated': windows['window_count']}
             
-                # Step 4: Create baselines
-                self.logger.info("Step 4: Creating baseline artifacts...")
-                artifacts = self._step4_create_baselines(cell_data, ue_data, windows)
-                results['step4'] = {'status': 'completed', 'artifacts_created': len(artifacts)}
+            # Step 4: Create baselines
+            self.logger.info("Step 4: Creating baseline artifacts...")
+            artifacts = self._step4_create_baselines(cell_data, ue_data, windows)
+            results['step4'] = {'status': 'completed', 'artifacts_created': len(artifacts)}
             
-                # Step 5: Save artifacts and prepare for Phase 2
-                self.logger.info("Step 5: Saving artifacts and preparing for Phase 2...")
-                artifact_paths = self._step5_save_and_prepare(cell_data, ue_data, windows, artifacts)
-                results['step5'] = {'status': 'completed', 'artifact_paths': artifact_paths}
+            # Step 5: Save artifacts and prepare for Phase 2
+            self.logger.info("Step 5: Saving artifacts and preparing for Phase 2...")
+            artifact_paths = self._step5_save_and_prepare(cell_data, ue_data, windows, artifacts)
+            results['step5'] = {'status': 'completed', 'artifact_paths': artifact_paths}
             
-                # Step 6: Generate comprehensive report
-                self.logger.info("Step 6: Generating Phase 1 completion report...")
-                report = self._step6_generate_report(results, artifacts, windows)
-                results['step6'] = {'status': 'completed', 'report_path': report['report_path']}
+            # Step 6: Generate comprehensive report
+            self.logger.info("Step 6: Generating Phase 1 completion report...")
+            report = self._step6_generate_report(results, artifacts, windows)
+            results['step6'] = {'status': 'completed', 'report_path': report['report_path']}
             
-                execution_time = (datetime.now() - start_time).total_seconds()
-                results['execution_summary'] = {
-                    'total_time_seconds': execution_time,
-                    'status': 'SUCCESS',
-                    'ready_for_phase2': True
-                }
+            execution_time = (datetime.now() - start_time).total_seconds()
+            results['execution_summary'] = {
+                'total_time_seconds': execution_time,
+                'status': 'SUCCESS',
+                'ready_for_phase2': True
+            }
             
             self.logger.info("="*60)
             self.logger.info(f"PHASE 1 COMPLETED SUCCESSFULLY in {execution_time:.1f} seconds")
@@ -158,61 +151,6 @@ class Phase1Orchestrator:
             raise
         
         return results
-    def _save_checkpoint(self, step_name: str, data: any):
-        """Save checkpoint after successful step completion."""
-        checkpoint_dir = self.paths['artifacts'] / 'checkpoints'
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    
-        checkpoint = {
-            'step': step_name,
-            'timestamp': datetime.now().isoformat(),
-            'data_type': type(data).__name__
-        }
-    
-        # Save based on data type
-        if isinstance(data, pd.DataFrame):
-            data.to_parquet(checkpoint_dir / f'{step_name}_data.parquet')
-            checkpoint['file'] = f'{step_name}_data.parquet'
-        elif isinstance(data, tuple) and all(isinstance(d, pd.DataFrame) for d in data):
-            data[0].to_parquet(checkpoint_dir / f'{step_name}_cell.parquet')
-            data[1].to_parquet(checkpoint_dir / f'{step_name}_ue.parquet')
-            checkpoint['files'] = [f'{step_name}_cell.parquet', f'{step_name}_ue.parquet']
-        else:
-            with open(checkpoint_dir / f'{step_name}_data.pkl', 'wb') as f:
-                pickle.dump(data, f)
-            checkpoint['file'] = f'{step_name}_data.pkl'
-    
-        # Save checkpoint metadata
-        with open(checkpoint_dir / 'checkpoint_status.json', 'w') as f:
-            json.dump(checkpoint, f, indent=2)
-    
-        self.logger.info(f"Checkpoint saved for {step_name}")
-
-    def _load_checkpoint(self, step_name: str):
-        """Load checkpoint if it exists."""
-        checkpoint_dir = self.paths['artifacts'] / 'checkpoints'
-        status_file = checkpoint_dir / 'checkpoint_status.json'
-    
-        if not status_file.exists():
-            return None
-    
-        with open(status_file, 'r') as f:
-            checkpoint = json.load(f)
-    
-        if checkpoint['step'] != step_name:
-            return None
-    
-        # Load based on file type
-        if 'files' in checkpoint:  # Tuple of DataFrames
-            cell_data = pd.read_parquet(checkpoint_dir / checkpoint['files'][0])
-            ue_data = pd.read_parquet(checkpoint_dir / checkpoint['files'][1])
-            return (cell_data, ue_data)
-        elif checkpoint['file'].endswith('.parquet'):
-            return pd.read_parquet(checkpoint_dir / checkpoint['file'])
-        else:
-            with open(checkpoint_dir / checkpoint['file'], 'rb') as f:
-                return pickle.load(f)
-        
 
     def _step1_load_and_preprocess(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Step 1: Load and preprocess raw VIAVI data"""
@@ -230,11 +168,6 @@ class Phase1Orchestrator:
         if data_summary['cell_data']['date_range'][0]:
             self.logger.info(f"Date range: {data_summary['cell_data']['date_range'][0]} to {data_summary['cell_data']['date_range'][1]}")
         
-        # Log data alignment
-        alignment = data_summary['data_alignment']
-        if alignment['timestamp_overlap']:
-            overlap_pct = alignment['timestamp_overlap'].get('overlap_percentage', 0)
-            self.logger.info(f"Timestamp overlap: {overlap_pct:.1f}%")
         
         return cell_data, ue_data
     
@@ -281,9 +214,6 @@ class Phase1Orchestrator:
         window_dir = self.paths['training']/'windows'
         self.window_generator.save_all_windows(windows, window_dir)
 
-        # Save checkpoint with just statistics (not the windows themselves)
-        self._save_checkpoint('step3', window_stats)
-
         # Store window statistics
         self.artifacts['window_statistics'] = window_stats
         
@@ -326,8 +256,12 @@ class Phase1Orchestrator:
         artifacts['historical_pdfs'] = self._create_histogram_pdfs(cell_data, ue_data)
         
         # 3. Correlation Matrix
-        self.logger.info("Creating correlation matrix...")
-        artifacts['correlation_matrix'] = self._create_correlation_matrix(cell_data, ue_data)
+        #self.logger.info("Creating correlation matrix...")
+        #artifacts['correlation_matrix'] = self._create_correlation_matrix(cell_data, ue_data)
+
+        #3. Field ranges baseline
+        self.logger.info("Creating field ranges...")
+        artifacts['field_ranges'] = self._create_field_ranges(cell_data, ue_data)
         
         # 4. Pattern Baselines
         self.logger.info("Creating pattern baselines...")
@@ -338,8 +272,8 @@ class Phase1Orchestrator:
         artifacts['temporal_templates'] = self._create_temporal_templates(cell_data, ue_data)
         
         # 6. Quality Thresholds
-        self.logger.info("Creating quality thresholds...")
-        artifacts['quality_thresholds'] = self._create_quality_thresholds()
+        #self.logger.info("Creating quality thresholds...")
+        #artifacts['quality_thresholds'] = self._create_quality_thresholds()
         
         # 7. Sample Windows
         self.logger.info("Sampling historical windows...")
@@ -489,7 +423,7 @@ class Phase1Orchestrator:
                     }
         
         return pdfs
-    
+
     def _create_correlation_matrix(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
         """Create correlation matrix for consistency checking"""
         from common.constants import EXPECTED_CORRELATIONS
@@ -562,61 +496,136 @@ class Phase1Orchestrator:
     
         return patterns
     
+
+    def _create_field_ranges(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
+        """Create field valid ranges for validation check"""
+    
+        field_ranges = {
+            'cell_metrics': {},
+            'ue_metrics': {},
+            'metadata': {
+                'creation_time': datetime.now().isoformat(),
+                'source': 'VIAVI training dataset observations',
+                'purpose': 'Valid ranges for validation check'
+            }
+        }
+    
+        # Cell metrics to track ranges
+        cell_metrics = [
+            'DRB.UEThpDl', 'DRB.UEThpUl',
+            'RRU.PrbUsedDl', 'RRU.PrbUsedUl',
+            'RRU.PrbAvailDl', 'RRU.PrbAvailUl',
+            'RRU.PrbTotDl', 'RRU.PrbTotUl',
+            'PEE.AvgPower', 'PEE.Energy_interval',
+            'RRC.ConnMean', 'RRC.ConnMax',
+            'CARR.AverageLayersDl', 'RRU.MaxLayerDlMimo'
+        ]
+    
+        # UE metrics to track ranges
+        ue_metrics = [
+            'DRB.UEThpDl', 'DRB.UEThpUl',
+            'DRB.UECqiDl', 'DRB.UECqiUl',
+            'RRU.PrbUsedDl', 'RRU.PrbUsedUl'
+        ]
+    
+        # Calculate ranges for cell metrics
+        for metric in cell_metrics:
+            if metric in cell_data.columns:
+                data = cell_data[metric].dropna()
+                if len(data) > 0:
+                    field_ranges['cell_metrics'][metric] = {
+                        'min': float(data.min()),
+                        'max': float(data.max()),
+                        'p01': float(data.quantile(0.01)),
+                        'p99': float(data.quantile(0.99)),
+                        'median': float(data.median()),
+                        'count': len(data)
+                    }
+    
+        # Calculate ranges for UE metrics
+        for metric in ue_metrics:
+            if metric in ue_data.columns:
+                data = ue_data[metric].dropna()
+                if len(data) > 0:
+                    field_ranges['ue_metrics'][metric] = {
+                        'min': float(data.min()),
+                        'max': float(data.max()),
+                        'p01': float(data.quantile(0.01)),
+                        'p99': float(data.quantile(0.99)),
+                        'median': float(data.median()),
+                        'count': len(data)
+                    }
+    
+        self.logger.info(f"Created field ranges for {len(field_ranges['cell_metrics'])} cell metrics and "
+                    f"{len(field_ranges['ue_metrics'])} UE metrics")
+    
+        return field_ranges
+
     def _create_temporal_templates(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
         """Create temporal pattern templates"""
-        from common.constants import TEMPORAL_COEFFICIENTS
-    
         if 'timestamp' not in cell_data.columns:
             return {'error': 'No timestamp column found'}
     
         # Extract temporal features
         cell_data_temp = cell_data.copy()
+        ue_data_temp = ue_data.copy()
         cell_data_temp['hour'] = cell_data_temp['timestamp'].dt.hour
-        cell_data_temp['dayofweek'] = cell_data_temp['timestamp'].dt.dayofweek
+        ue_data_temp['hour'] = ue_data_temp['timestamp'].dt.hour
     
         templates = {
-            'hourly_patterns': {},
-            'daily_patterns': {},
-            'peak_hours': [],
-            'temporal_variation': {},
+            'cells': {
+                'hod_median': [],
+                'hod_iqr': []
+            },
+            'ues': {
+                'hod_median': [],
+                'hod_iqr': []
+            },
             'metadata': {
                 'creation_time': datetime.now().isoformat(),
-                'sample_period': f"{cell_data['timestamp'].min()} to {cell_data['timestamp'].max()}"
+                'sample_period': f"{cell_data['timestamp'].min()} to {cell_data['timestamp'].max()}",
+                'purpose': 'Hour-of-day entity count baselines for C2 check'
             }
-        }
+        }   
     
-        # Hourly connection patterns
-        if 'RRC.ConnMean' in cell_data_temp.columns:
-            hourly_connections = cell_data_temp.groupby('hour')['RRC.ConnMean'].mean()
-            templates['hourly_patterns']['connections'] = {int(k): float(v) for k, v in hourly_connections.to_dict().items()}
+        # Calculate cell baselines per hour
+        cell_entity_col = self.column_names.get('cell_entity', 'Viavi.Cell.Name')
+        for hour in range(24):
+            hour_data = cell_data_temp[cell_data_temp['hour'] == hour]
+            if not hour_data.empty:
+                # Count unique cells per timestamp in this hour
+                counts = hour_data.groupby('timestamp')[cell_entity_col].nunique().values
+                if len(counts) > 0:
+                    q1, median, q3 = np.percentile(counts, [25, 50, 75])
+                    templates['cells']['hod_median'].append(float(median))
+                    templates['cells']['hod_iqr'].append(float(q3 - q1))
+                else:
+                    # Use expected value if no data
+                    templates['cells']['hod_median'].append(float(self.expected_entities['cells']))
+                    templates['cells']['hod_iqr'].append(5.0)
+            else:
+                templates['cells']['hod_median'].append(float(self.expected_entities['cells']))
+                templates['cells']['hod_iqr'].append(5.0)
     
-        # Hourly load patterns and peak hour identification
-        if 'RRU.PrbUsedDl' in cell_data_temp.columns:
-            hourly_load = cell_data_temp.groupby('hour')['RRU.PrbUsedDl'].mean()
-            templates['hourly_patterns']['load_dl'] = {int(k): float(v) for k, v in hourly_load.to_dict().items()}
-        
-            # Use configured percentile for peak hours
-            peak_percentile = TEMPORAL_COEFFICIENTS.get('peak_hour_percentile', 0.70)
-            peak_threshold = hourly_load.quantile(peak_percentile)
-            peak_hours = hourly_load[hourly_load >= peak_threshold].index.tolist()
-            templates['peak_hours'] = [int(h) for h in peak_hours]
+        # Calculate UE baselines per hour
+        ue_entity_col = self.column_names.get('ue_entity', 'Viavi.UE.Name')
+        for hour in range(24):
+            hour_data = ue_data_temp[ue_data_temp['hour'] == hour]
+            if not hour_data.empty:
+                counts = hour_data.groupby('timestamp')[ue_entity_col].nunique().values
+                if len(counts) > 0:
+                    q1, median, q3 = np.percentile(counts, [25, 50, 75])
+                    templates['ues']['hod_median'].append(float(median))
+                    templates['ues']['hod_iqr'].append(float(q3 - q1))
+                else:
+                    templates['ues']['hod_median'].append(30.0)  # Default
+                    templates['ues']['hod_iqr'].append(10.0)
+            else:
+                templates['ues']['hod_median'].append(30.0)
+                templates['ues']['hod_iqr'].append(10.0)
     
-        # Daily patterns (by day of week)
-        metrics_for_daily = ['RRC.ConnMean', 'RRU.PrbUsedDl', 'DRB.UEThpDl']
-        available_metrics = [m for m in metrics_for_daily if m in cell_data_temp.columns]
-    
-        if available_metrics:
-            daily_patterns = cell_data_temp.groupby('dayofweek')[available_metrics].mean()
-            templates['daily_patterns'] = {
-                metric: {int(k): float(v) for k, v in daily_patterns[metric].to_dict().items()}
-                for metric in available_metrics
-            }
-    
-        # Use temporal coefficients from config
-        templates['temporal_variation'] = {
-            'minute_variation_coefficient': TEMPORAL_COEFFICIENTS.get('minute_variation_coefficient', 0.15),
-            'hour_variation_coefficient': TEMPORAL_COEFFICIENTS.get('hour_variation_coefficient', 0.30)
-        }
+        self.logger.info(f"Created HoD entity baselines: Cells [{min(templates['cells']['hod_median']):.0f}-{max(templates['cells']['hod_median']):.0f}], "
+                        f"UEs [{min(templates['ues']['hod_median']):.0f}-{max(templates['ues']['hod_median']):.0f}]")
     
         return templates
     
@@ -748,10 +757,11 @@ class Phase1Orchestrator:
         artifact_formats = {
             'statistical_baselines': 'pkl',
             'historical_pdfs': 'pkl',  # or 'npz' if converted to numpy
-            'correlation_matrix': 'json',
+            #'correlation_matrix': 'json',
             'pattern_baselines': 'pkl',
             'temporal_templates': 'pkl',
-            'quality_thresholds': 'json',
+            'field_ranges': 'json',
+            #'quality_thresholds': 'json',
             'metadata_config': 'json',
             'sample_windows': 'json'
         }
