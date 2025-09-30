@@ -11,6 +11,7 @@ from pathlib import Path
 import json
 from datetime import datetime
 import sys
+import yaml
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parents[2]
@@ -19,10 +20,9 @@ sys.path.insert(0, str(project_root))
 # Import from common modules
 from common.constants import (
     COLUMN_NAMES,
-    QUALITY_THRESHOLDS,
     PATHS
 )
-from src.common.logger import get_phase2_logger
+from common.logger import get_phase2_logger
 
 
 class BaseDimension(ABC):
@@ -31,16 +31,18 @@ class BaseDimension(ABC):
     Each dimension inherits from this class and implements calculate_score method.
     """
     
-    def __init__(self, name: str, config: Optional[Dict] = None):
+    def __init__(self, name: str, config: Optional[Path] = None, baselines: Optional[Dict] = None):
         """
         Initialize base dimension calculator.
         
         Args:
             name: Dimension name (e.g., 'completeness', 'accuracy')
-            config: Optional configuration dictionary to override defaults
+            config: Optional configuration dictionary
+            baselines: Pre-loaded baselines dictionary (optional)
         """
         self.name = name
         self.config = config or {}
+        self.baselines = baselines or {}
         
         # Setup logger for this dimension
         self.logger = get_phase2_logger(f'dimension_{name}')
@@ -52,15 +54,97 @@ class BaseDimension(ABC):
         self.ue_entity_col = COLUMN_NAMES['ue_entity']
         
         # Load dimension-specific configuration
-        self.dimension_config = QUALITY_THRESHOLDS.get(name, {})
+        self.dimension_thresholds = self._load_dimension_thresholds(name, config_path)
         
         # Initialize score history for tracking
         self.score_history = []
         
         self.logger.debug(f"Configuration loaded for {name} dimension")
+
+
+    def _load_dimension_thresholds(self, dimension_name: str, config_path: Optional[Path] = None) -> Dict:
+        """
+        Load dimension-specific thresholds from config.yaml
     
+        Args:
+            dimension_name: Name of the dimension
+            config_path: Path to config file
+        
+        Returns:
+            Dictionary of thresholds for this dimension
+        """
+        try:
+            # Use provided path or default from constants
+            if config_path is None:
+                config_path = Path(PATHS.get('config', 'config')) / 'config.yaml'
+
+            if not config_path.exists():
+                self.logger.warning(f"Config file not found at {config_path}, using defaults")
+                return {}
+
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+
+            # Navigate to quality_dimension_thresholds section
+            thresholds = config.get('quality_dimension_thresholds', {}).get(dimension_name, {})
+        
+            self.logger.debug(f"Loaded {len(thresholds)} threshold groups for {dimension_name}")
+            return thresholds
+        
+        except Exception as e:
+            self.logger.error(f"Error loading thresholds: {e}")
+            return {}    
+
+    def get_baseline(self, baseline_name: str) -> Optional[Dict]:
+        """
+        Get a specific baseline from loaded baselines.
+
+        Args:
+            baseline_name: Name of baseline to retrieve
+
+        Returns:
+            Baseline data or None if not found
+        """
+        if baseline_name not in self.baselines:
+            self.logger.warning(f"Baseline '{baseline_name}' not found")
+            return None
+        return self.baselines.get(baseline_name)
+    
+
+    def calculate_check_score(self, value: float, pass_threshold: float, 
+                          soft_threshold: float, higher_is_better: bool = True) -> Tuple[float, str]:
+        """
+        Calculate PASS/SOFT/FAIL score based on thresholds.
+
+        Args:
+            value: Actual value to check
+            pass_threshold: Threshold for PASS
+            soft_threshold: Threshold for SOFT
+            higher_is_better: If True, higher values are better
+
+        Returns:
+            Tuple of (score, status) where score is 1.0/0.5/0.0 and status is PASS/SOFT/FAIL
+        """
+        if value is None or np.isnan(value):
+            return None, 'N/A'
+
+        if higher_is_better:
+            if value >= pass_threshold:
+                return 1.0, 'PASS'
+            elif value >= soft_threshold:
+                return 0.5, 'SOFT'
+            else:
+                return 0.0, 'FAIL'
+        else:
+            if value <= pass_threshold:
+                return 1.0, 'PASS'
+            elif value <= soft_threshold:
+                return 0.5, 'SOFT'
+            else:
+                return 0.0, 'FAIL'
+
     @abstractmethod
-    def calculate_score(self, window_data: Dict) -> Dict:
+    def calculate_score(self, window_data: Dict, baselines: Optional[Dict] = None) -> Dict:
         """
         Calculate quality score for this dimension.
         Must be implemented by each dimension subclass.
@@ -70,10 +154,12 @@ class BaseDimension(ABC):
                 - 'cell_data': DataFrame with cell records
                 - 'ue_data': DataFrame with UE records  
                 - 'metadata': Dict with window information
+            baselines: Optional override for baselines
         
         Returns:
             Dictionary with:
                 - 'score': Float between 0-1 (1 is perfect)
+                - 'coverage': Float between 0-1 (data coverage)
                 - 'details': Dict with measurement details
         """
         pass
