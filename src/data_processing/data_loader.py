@@ -106,7 +106,7 @@ class DataLoader:
         Apply necessary data corrections for UE data.
         Only corrections, not quality assessment.
         """
-        df = df.copy()
+        """df = df.copy()
         correction_stats = {}
         
         # Handle CQI=0 as no measurement - critical for UE data
@@ -128,7 +128,7 @@ class DataLoader:
         
         # Note: We do NOT flag TB counters here - that's for quality assessment phase
         
-        return df
+        return df"""
     
     def get_data_summary(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
         """

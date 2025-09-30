@@ -13,9 +13,12 @@ Pure scoring implementation without judgments.
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional, List
 from pathlib import Path
 import sys
+import json
+import pickle
+from datetime import datetime
 
 # Add project root to path
 project_root = Path(__file__).resolve().parents[2]
@@ -26,24 +29,26 @@ from common.constants import (
     EXPECTED_ENTITIES,
     MEAS_INTERVAL_SEC,
     EXPECTED_PATTERNS,
-    DATA_QUIRKS
+    DATA_QUIRKS,
+    PATHS,
+    SCORING_LEVELS
 )
 
 
 class CompletenessDimension(BaseDimension):
     """Calculates completeness score for data windows."""
     
-    def __init__(self):
+    def __init__(self, baselines_path: Optional[Path] = None):
         """Initialize completeness dimension."""
         super().__init__('completeness')
         
-        # Load expected values from configuration
+        # Load expected values from configuration (fallbacks only; C2 uses HoD baselines)
         self.expected_cells = EXPECTED_ENTITIES['cells']
         self.expected_ues = EXPECTED_ENTITIES['ues']
         self.measurement_interval = MEAS_INTERVAL_SEC
         
-        # Expected patterns from data analysis
-        self.cqi_expected_nan_rate = EXPECTED_PATTERNS.get('cqi_no_measurement_rate', 0.60)
+        # Expected patterns from data analysis (informational)
+        self.cqi_expected_zero_rate = EXPECTED_PATTERNS.get('cqi_no_measurement_rate', 0.60)
         self.mimo_expected_zero_rate = EXPECTED_PATTERNS.get('mimo_zero_rate', 0.86)
         
         # Define mandatory fields
@@ -57,8 +62,73 @@ class CompletenessDimension(BaseDimension):
             self.timestamp_col,
             self.ue_entity_col
         ]
-        self.logger.info(f"Completeness dimension initialized: {self.expected_cells} cells, {self.expected_ues} UEs expected")
-        self.logger.debug(f"Expected patterns - CQI NaN: {self.cqi_expected_nan_rate:.1%}, MIMO zeros: {self.mimo_expected_zero_rate:.1%}")
+
+        # Load thresholds from config loaded in BaseDimension; fall back to v3.0 defaults if missing
+        defaults = {
+            "C1_mandatory_fields": {"pass": 0.95, "soft": 0.80},
+            "C2_entity_coverage": {
+                "cells": {"pass": 0.95, "soft": 0.85},
+                "ues":   {"pass": 0.80, "soft": 0.60},
+            },
+            "C3_temporal_coverage": {"pass": 5, "soft": 4},
+            "C4_field_completeness": {"pass": 0.80, "soft": 0.60, "null_threshold": 0.20},
+        }
+        try:
+            cfg = getattr(self, "config", None) or getattr(self, "cfg", None)  # BaseDimension may expose config
+            qdt = (cfg or {}).get("quality_dimension_thresholds", {})
+            self.thresholds = qdt.get("completeness", defaults)
+        except Exception:
+            self.thresholds = defaults
+
+        # Load Hour-of-Day baselines (temporal_templates) for entity coverage
+        self.hod_baselines = self._load_hod_baselines(baselines_path)
+
+        self.logger.info(
+            f"Completeness dimension initialized: {self.expected_cells} cells, {self.expected_ues} UEs (fallbacks)."
+        )
+        self.logger.debug(
+            f"Expected patterns - CQI Zero-as-no-report: {self.cqi_expected_zero_rate:.1%}, "
+            f"MIMO zeros: {self.mimo_expected_zero_rate:.1%}"
+        )
+
+    
+    def _load_hod_baselines(self, baselines_path: Optional[Path]) -> Dict:
+        """Load Hour-of-Day baselines from temporal_templates artifact."""
+        try:
+            if baselines_path is None:
+                # Try to find the most recent temporal_templates file
+                artifacts_path = Path(PATHS['artifacts']) / 'temporal_templates'
+                if artifacts_path.exists():
+                    pkl_files = list(artifacts_path.glob('*.pkl'))
+                    if pkl_files:
+                        baselines_path = max(pkl_files, key=lambda p: p.stat().st_mtime)
+                        self.logger.debug(f"Loading HoD baselines from {baselines_path}")
+            
+            if baselines_path and baselines_path.exists():
+                with open(baselines_path, 'rb') as f:
+                    templates = pickle.load(f)
+                    self.logger.info("Successfully loaded HoD baselines for entity coverage")
+                    return templates
+            else:
+                self.logger.warning("HoD baselines not found, using fixed expected values")
+                return self._create_default_hod_baselines()
+                
+        except Exception as e:
+            self.logger.error(f"Error loading HoD baselines: {e}")
+            return self._create_default_hod_baselines()
+    
+    def _create_default_hod_baselines(self) -> Dict:
+        """Create default HoD baselines if file not found."""
+        return {
+            'cells': {
+                'hod_median': [self.expected_cells] * 24,
+                'hod_iqr': [5.0] * 24
+            },
+            'ues': {
+                'hod_median': [int(self.expected_ues * 0.7)] * 24,  # Assume 70% UE presence
+                'hod_iqr': [10.0] * 24
+            }
+        }
     
     def calculate_score(self, window_data: Dict) -> Dict:
         """
@@ -68,245 +138,238 @@ class CompletenessDimension(BaseDimension):
             window_data: Window data dictionary
             
         Returns:
-            Dictionary with score and measurement details
+            Dictionary with score, coverage and measurement details
         """
         is_valid, error_msg = self.validate_window_data(window_data)
         if not is_valid:
             self.logger.error(f"Window validation failed: {error_msg}")
-            return self.format_result(0.0, {'validation_error': error_msg})
+            return {
+                'score': 0.0,
+                'coverage': 0.0,
+                'status': 'ERROR',
+                'details': {'validation_error': error_msg}
+            }
+
         cell_data = window_data.get('cell_data', pd.DataFrame())
         ue_data = window_data.get('ue_data', pd.DataFrame())
         window_id = window_data.get('metadata', {}).get('window_id', 'unknown')
         self.logger.debug(f"Processing window {window_id}: {len(cell_data)} cell records, {len(ue_data)} UE records")
         
-        # Calculate individual completeness components
+        # Calculate individual completeness components (each returns PASS=1.0 / SOFT=0.5 / FAIL=0.0 / None)
         c1_score, c1_details = self._score_mandatory_fields(cell_data, ue_data)
         c2_score, c2_details = self._score_entity_presence(cell_data, ue_data)
         c3_score, c3_details = self._score_time_continuity(cell_data, ue_data)
-        c4_score, c4_details = self._score_timestamp_alignment(cell_data, ue_data)
-        c5_score, c5_details = self._score_field_completeness(cell_data, ue_data)
+        c4_score, c4_details = self._score_field_completeness(cell_data, ue_data)
         
-        # Combine scores (simple average)
-        overall_score = np.mean([c1_score, c2_score, c3_score, c4_score, c5_score])
-        self.logger.debug(f"Component scores - C1:{c1_score:.2f} C2:{c2_score:.2f} C3:{c3_score:.2f} "
-                     f"C4:{c4_score:.2f} C5:{c5_score:.2f} Overall:{overall_score:.2f}")
+        component_scores = [c1_score, c2_score, c3_score, c4_score]
+        valid_scores = [s for s in component_scores if s is not None]
+        overall_score = float(np.mean(valid_scores)) if valid_scores else None
+        coverage = len(valid_scores) / 4.0
+
+        self.logger.debug(
+            f"Component scores - C1:{c1_score} C2:{c2_score} C3:{c3_score} C4:{c4_score} "
+            f"Overall:{overall_score} Coverage:{coverage:.2f}"
+        )
     
-        
         return {
             'score': overall_score,
+            'coverage': coverage,
             'details': {
                 'mandatory_fields_score': c1_score,
                 'entity_presence_score': c2_score,
                 'time_continuity_score': c3_score,
-                'timestamp_alignment_score': c4_score,
-                'field_completeness_score': c5_score,
+                'field_completeness_score': c4_score,
                 'measurements': {
                     'mandatory_fields': c1_details,
                     'entity_presence': c2_details,
                     'time_continuity': c3_details,
-                    'timestamp_alignment': c4_details,
-                    'field_completeness': c5_details
+                    'field_completeness': c4_details
                 }
             }
         }
     
     def _score_mandatory_fields(self, cell_data: pd.DataFrame, 
-                               ue_data: pd.DataFrame) -> Tuple[float, Dict]:
+                               ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
-        Score based on presence of mandatory fields.
-        
-        Returns:
-            Tuple of (score, measurement details)
+        C1: Fraction of rows with all mandatory fields present (cells+UEs), 
+            mapped to PASS/SOFT/FAIL via thresholds.
         """
         details = {}
-        
-        # Check cell mandatory fields
-        cell_nulls = 0
-        for field in self.mandatory_fields_cell:
-            if field in cell_data.columns:
-                null_count = cell_data[field].isnull().sum()
-                cell_nulls += null_count
-                details[f'cell_{field}_nulls'] = int(null_count)
-                if null_count > 0:
-                    self.logger.debug(f"Mandatory cell field '{field}' has {null_count} nulls")
-            else:
-                self.logger.warning(f"Mandatory cell field '{field}' missing from data")
-                details[f'cell_{field}'] = 'missing_column'
-                cell_nulls += len(cell_data)
-        # Check UE mandatory fields
-        ue_nulls = 0
-        for field in self.mandatory_fields_ue:
-            if field in ue_data.columns:
-                null_count = ue_data[field].isnull().sum()
-                ue_nulls += null_count
-                details[f'ue_{field}_nulls'] = int(null_count)
-                if null_count > 0:
-                    self.logger.debug(f"Mandatory UE field '{field}' has {null_count} nulls")
-            else:
-                self.logger.warning(f"Mandatory UE field '{field}' missing from data")
-                details[f'ue_{field}'] = 'missing_column'
-                ue_nulls += len(ue_data)
-        
-        # Score: 1.0 if no nulls, 0.0 if any nulls in mandatory fields
-        score = 1.0 if (cell_nulls == 0 and ue_nulls == 0) else 0.0
-        self.logger.debug(f"C1 Mandatory fields score: {score:.2f} (cell_nulls: {cell_nulls}, ue_nulls: {ue_nulls})")
-        
+        total_rows = (len(cell_data) if not cell_data.empty else 0) + (len(ue_data) if not ue_data.empty else 0)
+        if total_rows == 0:
+            return None, {'note': 'no rows in window'}
+
+        # Row-wise completeness: all mandatory fields present
+        cell_ok = 0
+        if not cell_data.empty:
+            present_mask = cell_data[self.mandatory_fields_cell].notna().all(axis=1)
+            cell_ok = int(present_mask.sum())
+            details['cell_rows_with_all_mandatory'] = cell_ok
+            details['cell_total_rows'] = int(len(cell_data))
+
+        ue_ok = 0
+        if not ue_data.empty:
+            present_mask = ue_data[self.mandatory_fields_ue].notna().all(axis=1)
+            ue_ok = int(present_mask.sum())
+            details['ue_rows_with_all_mandatory'] = ue_ok
+            details['ue_total_rows'] = int(len(ue_data))
+
+        fraction_complete_rows = (cell_ok + ue_ok) / float(total_rows)
+        details['fraction_rows_all_mandatory'] = float(fraction_complete_rows)
+
+        t = self.thresholds.get("C1_mandatory_fields", {})
+        p, s = t.get("pass", 0.95), t.get("soft", 0.80)
+        score = 1.0 if fraction_complete_rows >= p else (0.5 if fraction_complete_rows >= s else 0.0)
+        self.logger.debug(f"C1: fraction={fraction_complete_rows:.3f} => score={score}")
         return score, details
     
     def _score_entity_presence(self, cell_data: pd.DataFrame,
-                              ue_data: pd.DataFrame) -> Tuple[float, Dict]:
+                              ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
-        Score based on percentage of entities reporting.
-        
-        Returns:
-            Tuple of (score, measurement details)
+        C2: Entity coverage vs HoD baselines (cells & UEs).
+             PASS if both meet pass thresholds, FAIL if either below soft thresholds, else SOFT.
         """
         details = {}
-        # Check cells per timestamp
-        cell_presence_ratio = 0.0
-        if self.timestamp_col in cell_data.columns and self.cell_entity_col in cell_data.columns:
-            cells_per_timestamp = cell_data.groupby(self.timestamp_col)[self.cell_entity_col].nunique()
-            cell_ratios = cells_per_timestamp / self.expected_cells  
-            cell_presence_ratio = cell_ratios.mean()  
-            details['avg_cell_presence_ratio'] = float(cell_presence_ratio)
-            self.logger.debug(f"Cell presence: {cells_per_timestamp.mean():.1f}/{self.expected_cells} cells per timestamp")
+
+        # Determine window hour from timestamps (prefer earliest timestamp present)
+        def _infer_hour(df_list: List[pd.DataFrame]) -> Optional[int]:
+            for df in df_list:
+                if not df.empty and self.timestamp_col in df.columns:
+                    ts = df[self.timestamp_col].dropna().iloc[0]
+                    try:
+                        # Handle epoch seconds or ISO-8601
+                        if isinstance(ts, (int, float, np.integer, np.floating)):
+                            return int(pd.to_datetime(ts, unit='s').hour)
+                        return int(pd.to_datetime(ts).hour)
+                    except Exception:
+                        continue
+            return None
+
+        hour = _infer_hour([cell_data, ue_data])
+        if hour is None:
+            return None, {'note': 'could not infer hour for HoD baselines'}
+
+        # Expected entities (HoD medians)
+        expected_cells = float(self.hod_baselines['cells']['hod_median'][hour])
+        expected_ues   = float(self.hod_baselines['ues']['hod_median'][hour])
+        details['expected_cells_hod'] = expected_cells
+        details['expected_ues_hod'] = expected_ues
+        details['hour'] = hour
+
+        # Actual average unique entities reporting per timestamp
+        actual_cells = 0.0
+        if not cell_data.empty and self.timestamp_col in cell_data.columns and self.cell_entity_col in cell_data.columns:
+            cells_per_ts = cell_data.groupby(self.timestamp_col)[self.cell_entity_col].nunique()
+            actual_cells = float(cells_per_ts.mean()) if len(cells_per_ts) else 0.0
+
+        actual_ues = 0.0
+        if not ue_data.empty and self.timestamp_col in ue_data.columns and self.ue_entity_col in ue_data.columns:
+            ues_per_ts = ue_data.groupby(self.timestamp_col)[self.ue_entity_col].nunique()
+            actual_ues = float(ues_per_ts.mean()) if len(ues_per_ts) else 0.0
+
+        ratio_cells = (actual_cells / expected_cells) if expected_cells > 0 else 0.0
+        ratio_ues   = (actual_ues / expected_ues) if expected_ues > 0 else 0.0
+
+        details['actual_cells_avg'] = actual_cells
+        details['actual_ues_avg'] = actual_ues
+        details['ratio_cells'] = ratio_cells
+        details['ratio_ues'] = ratio_ues
+
+        t = self.thresholds.get("C2_entity_coverage", {})
+        c_pass, c_soft = t.get("cells", {}).get("pass", 0.95), t.get("cells", {}).get("soft", 0.85)
+        u_pass, u_soft = t.get("ues",   {}).get("pass", 0.80), t.get("ues",   {}).get("soft", 0.60)
+
+        if ratio_cells < c_soft or ratio_ues < u_soft:
+            score = 0.0
+        elif ratio_cells >= c_pass and ratio_ues >= u_pass:
+            score = 1.0
         else:
-            self.logger.warning("Missing columns for cell entity presence check")
-    
-        # Check UEs per timestamp
-        ue_presence_ratio = 0.0
-        if self.timestamp_col in ue_data.columns and self.ue_entity_col in ue_data.columns:
-            ues_per_timestamp = ue_data.groupby(self.timestamp_col)[self.ue_entity_col].nunique()
-            ue_ratios = ues_per_timestamp / self.expected_ues  
-            ue_presence_ratio = ue_ratios.mean()  
-            details['avg_ue_presence_ratio'] = float(ue_presence_ratio)
-            self.logger.debug(f"UE presence: {ues_per_timestamp.mean():.1f}/{self.expected_ues} UEs per timestamp")
-        else:
-            self.logger.warning("Missing columns for UE entity presence check")
-    
-        # Overall score is average of cell and UE presence
-        score = (cell_presence_ratio + ue_presence_ratio) / 2.0
-        self.logger.debug(f"Entity presence score: {score:.3f} (Cell: {cell_presence_ratio:.3f}, UE: {ue_presence_ratio:.3f})")
+            score = 0.5
+
+        self.logger.debug(
+            f"C2: hour={hour} cells {actual_cells:.2f}/{expected_cells:.0f} ({ratio_cells:.2f}), "
+            f"UEs {actual_ues:.2f}/{expected_ues:.0f} ({ratio_ues:.2f}) => score={score}"
+        )
         return score, details
     
     def _score_time_continuity(self, cell_data: pd.DataFrame,
-                              ue_data: pd.DataFrame) -> Tuple[float, Dict]:
+                              ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
-        Score based on time series continuity.
-        
-        Returns:
-            Tuple of (score, measurement details)
+        C3: Temporal coverage by unique timestamp count in the window.
+            PASS if count >= 5, SOFT if >= 4, else FAIL. Thresholds from config.
         """
         details = {}
-        gap_count = 0
-        
-        # Check cell data gaps
-        if self.timestamp_col in cell_data.columns:
-            timestamps = pd.to_datetime(cell_data[self.timestamp_col], unit='s')
-            unique_timestamps = sorted(timestamps.unique())
-            
-            for i in range(1, len(unique_timestamps)):
-                gap = (unique_timestamps[i] - unique_timestamps[i-1]).total_seconds()
-                if abs(gap - self.measurement_interval) > 5:  # 5 second tolerance
-                    gap_count += 1
-            
-            details['cell_time_gaps'] = gap_count
-        
-        # Check UE data gaps  
-        if self.timestamp_col in ue_data.columns:
-            timestamps = pd.to_datetime(ue_data[self.timestamp_col], unit='s')
-            unique_timestamps = sorted(timestamps.unique())
-            
-            ue_gaps = 0
-            for i in range(1, len(unique_timestamps)):
-                gap = (unique_timestamps[i] - unique_timestamps[i-1]).total_seconds()
-                if abs(gap - self.measurement_interval) > 5:
-                    ue_gaps += 1
-                    gap_count += 1
-            
-            details['ue_time_gaps'] = ue_gaps
-        
-        # Score decreases with more gaps
-        score = max(0, 1.0 - (gap_count * 0.2))
-        details['total_gaps'] = gap_count
-        
-        return score, details
-    
-    def _score_timestamp_alignment(self, cell_data: pd.DataFrame,
-                                  ue_data: pd.DataFrame) -> Tuple[float, Dict]:
-        """
-        Score based on timestamp alignment between datasets.
-        
-        Returns:
-            Tuple of (score, measurement details)
-        """
-        details = {}
-        
-        if self.timestamp_col not in cell_data.columns or self.timestamp_col not in ue_data.columns:
-            return 0.0, {'error': 'missing timestamp columns'}
-        
-        cell_timestamps = set(cell_data[self.timestamp_col].unique())
-        ue_timestamps = set(ue_data[self.timestamp_col].unique())
-        
-        intersection = cell_timestamps & ue_timestamps
-        
-        # Score based on alignment
-        score = len(intersection) / len(cell_timestamps) if len(cell_timestamps) > 0 else 0.0
-        
-        details['common_timestamps'] = len(intersection)
-        details['cell_only_timestamps'] = len(cell_timestamps - ue_timestamps)
-        details['ue_only_timestamps'] = len(ue_timestamps - cell_timestamps)
-        
+        # Union of unique timestamps across both datasets
+        ts_union = set()
+        if not cell_data.empty and self.timestamp_col in cell_data.columns:
+            ts_union.update(pd.Series(cell_data[self.timestamp_col]).dropna().unique().tolist())
+        if not ue_data.empty and self.timestamp_col in ue_data.columns:
+            ts_union.update(pd.Series(ue_data[self.timestamp_col]).dropna().unique().tolist())
+
+        ts_count = len(ts_union)
+        details['unique_timestamps'] = ts_count
+
+        if ts_count == 0:
+            return None, details  # N/A if no timestamps at all
+
+        t = self.thresholds.get("C3_temporal_coverage", {})
+        p, s = int(t.get("pass", 5)), int(t.get("soft", 4))
+        score = 1.0 if ts_count >= p else (0.5 if ts_count >= s else 0.0)
+        self.logger.debug(f"C3: ts_count={ts_count} => score={score}")
         return score, details
     
     def _score_field_completeness(self, cell_data: pd.DataFrame,
-                                 ue_data: pd.DataFrame) -> Tuple[float, Dict]:
+                                 ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
-        Score based on field-level completeness with pattern awareness.
-        
-        Returns:
-            Tuple of (score, measurement details)
+        C4: Field-level completeness with pattern awareness.
+            Count fraction of non-mandatory, eligible fields having < null_threshold nulls.
         """
         details = {}
-        all_scores = []
-        
-        # Skip unreliable TB counters
-        skip_fields = ['TB.TotNbrDl', 'TB.TotNbrUl'] if DATA_QUIRKS.get('tb_counters_unreliable') else []
-        if skip_fields:
-            self.logger.debug(f"Skipping unreliable fields: {skip_fields}")
-        
-        # Calculate completeness for each metric
-        for col in cell_data.columns:
-            if col not in skip_fields:
-                null_ratio = cell_data[col].isnull().sum() / len(cell_data) if len(cell_data) > 0 else 0
-                completeness = 1.0 - null_ratio
-                
-                # Adjust for MIMO fields (zeros are expected)
-                if col in ['CARR.AverageLayersDl', 'RRU.MaxLayerDlMimo']:
-                    zero_ratio = (cell_data[col] == 0).sum() / len(cell_data) if len(cell_data) > 0 else 0
-                    if abs(zero_ratio - self.mimo_expected_zero_rate) < 0.15:
-                        completeness = 1.0  # Expected pattern
-                        self.logger.debug(f"MIMO field {col}: {zero_ratio:.1%} zeros matches expected pattern")
-                
-                all_scores.append(completeness)
-        
-        for col in ue_data.columns:
-            if col not in skip_fields:
-                null_ratio = ue_data[col].isnull().sum() / len(ue_data) if len(ue_data) > 0 else 0
-                completeness = 1.0 - null_ratio
-                
-                # Adjust for CQI fields (NaN is expected)
-                if col in ['DRB.UECqiDl', 'DRB.UECqiUl']:
-                    if abs(null_ratio - self.cqi_expected_nan_rate) < 0.15:
-                        completeness = 1.0  # Expected pattern
-                        self.logger.debug(f"CQI field {col}: {null_ratio:.1%} NaN matches expected pattern")
-                
-                all_scores.append(completeness)
-        
-        score = np.mean(all_scores) if all_scores else 0.0
-        details['avg_field_completeness'] = float(score)
-        details['fields_evaluated'] = len(all_scores)
-        self.logger.debug(f"C5 Field completeness: {score:.2f} ({len(all_scores)} fields evaluated)")
-    
-        
+
+        if DATA_QUIRKS.get('tb_counters_unreliable'):
+            skip_fields_exact = {'TB.TotNbrDl', 'TB.TotNbrUl'}
+        else:
+            skip_fields_exact = set()
+
+        def eligible_fields(df: pd.DataFrame, mandatory: List[str]) -> List[str]:
+            if df.empty:
+                return []
+            cols = []
+            for c in df.columns:
+                if c in mandatory:
+                    continue
+                if c in skip_fields_exact:
+                    continue
+                cols.append(c)
+            return cols
+
+        cell_fields = eligible_fields(cell_data, self.mandatory_fields_cell)
+        ue_fields   = eligible_fields(ue_data, self.mandatory_fields_ue)
+        fields = [(cell_data, c) for c in cell_fields] + [(ue_data, c) for c in ue_fields]
+
+        total_fields = len(fields)
+        if total_fields == 0:
+            return None, {'note': 'no eligible fields to evaluate'}
+
+        t = self.thresholds.get("C4_field_completeness", {})
+        null_thr = float(t.get("null_threshold", 0.20))
+        passed = 0
+
+        for df, col in fields:
+            # Field passes if < null_threshold nulls in the window
+            null_ratio = float(df[col].isna().mean()) if len(df) > 0 else 0.0
+            if null_ratio < null_thr:
+                passed += 1
+
+        fraction_fields_passing = passed / float(total_fields)
+        details['fields_evaluated'] = int(total_fields)
+        details['fields_passing'] = int(passed)
+        details['fraction_fields_passing'] = float(fraction_fields_passing)
+
+        p, s = float(t.get("pass", 0.80)), float(t.get("soft", 0.60))
+        score = 1.0 if fraction_fields_passing >= p else (0.5 if fraction_fields_passing >= s else 0.0)
+        self.logger.debug(
+            f"C4: {passed}/{total_fields} fields passing (<{null_thr:.2f} nulls) => "
+            f"fraction={fraction_fields_passing:.3f} score={score}"
+        )
         return score, details
