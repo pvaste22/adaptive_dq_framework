@@ -69,7 +69,7 @@ DRIFT_CONFIG = _load_config_safe(DRIFT_CONFIG_PATH, 'yaml')
 
 # Dataset expectations from config
 DATASET_EXPECTATIONS = MAIN_CONFIG.get('dataset_expectations', {})
-PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances')
+PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances',{})
 # Expected patterns with tolerances
 EXPECTED_PATTERNS = {
     'mimo_zero_rate': DATASET_EXPECTATIONS.get('patterns', {}).get('mimo_zero_rate', {}).get('expected', 0.86),
