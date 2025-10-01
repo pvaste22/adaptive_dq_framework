@@ -36,6 +36,7 @@ from data_processing.window_generator import WindowGenerator
 from common.logger import get_phase1_logger
 from common.constants import PATHS, VERSIONING, COLUMN_NAMES
 
+
 class Phase1Orchestrator:
     """
     Orchestrates Phase 1: Data Preparation and Baseline Creation
@@ -57,7 +58,8 @@ class Phase1Orchestrator:
             'field_ranges',
             'metadata_config',
             'sample_windows',
-            'divergence_array_placeholder'
+            'divergence_array_placeholder',
+            'dq_baseline'
         ]
         
         # Initialize processors - no config needed, they use constants
@@ -291,6 +293,10 @@ class Phase1Orchestrator:
             'note': 'Will be populated during quality scoring phase',
             'expected_size': '1000-2000 JSD values'
         }
+
+        # 10. DQ Baseline
+        self.logger.info("Creating dq_baseline...")
+        artifacts['dq_baseline'] = self._create_dq_baseline(cell_data, ue_data)
         
         self.logger.info(f"Created {len([k for k, v in artifacts.items() if v.get('status') != 'placeholder'])} baseline artifacts")
         
@@ -629,55 +635,7 @@ class Phase1Orchestrator:
     
         return templates
     
-    def _create_quality_thresholds(self) -> Dict:
-        """Create quality thresholds for all dimensions"""
-        
-        from common.constants import BAND_LIMITS, EXPECTED_ENTITIES, WINDOW_SPECS
-        
-        thresholds = { # change these later : take all from config files don't use harcoded values
-            'completeness': {
-                'expected_cell_records_per_window': WINDOW_SPECS['expected_records']['cells_per_window'],
-                'expected_ue_records_per_window': WINDOW_SPECS['expected_records']['ues_per_window'],
-                'expected_total_records_per_window': WINDOW_SPECS['expected_records']['total_per_window'],
-                'minimum_completeness_ratio': WINDOW_SPECS.get('min_completeness', 0.95)
-            },
-            'consistency': {
-                'physical_rules': {
-                    'prb_band_limits': BAND_LIMITS,
-                    'mean_le_max_tolerance': 0.01,
-                    'min_le_mean_tolerance': 0.01
-                },
-                'correlation_tolerances': { 
-                    'prb_throughput_tolerance': 0.30,
-                    'power_load_tolerance': 0.30,
-                    'connections_throughput_tolerance': 0.30
-                }
-            },
-            'accuracy': {
-                'z_score_threshold': 3.0,
-                'spectral_efficiency_max': 30.0,
-                'energy_validation_minor_threshold': 0.10,
-                'energy_validation_major_threshold': 0.20,
-                'pattern_deviation_threshold': 0.10
-            },
-            'timeliness': {
-                'expected_update_interval_seconds': 60,
-                'update_interval_tolerance_seconds': 5,
-                'staleness_detection_threshold': 3,
-                'ks_test_significance_level': 0.05
-            },
-            'skewness': {
-                'jsd_normal_threshold': 0.1,
-                'jsd_moderate_threshold': 0.3,
-                'distribution_bins': 50
-            },
-            'metadata': {
-                'creation_time': datetime.now().isoformat(),
-                'source': 'Phase 1 baseline creation'
-            }
-        }
-        
-        return thresholds
+ 
     
     def _create_sample_windows(self, sample_window_info: List[Dict]) -> Dict:
         """Create sample windows for KS tests"""
@@ -710,6 +668,74 @@ class Phase1Orchestrator:
             })"""
         
         return sample_data
+    
+    
+    def _create_dq_baseline(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
+        """
+        Build self-calibrated DQ baseline for threshold-free checks.
+        Returns a small dict saved as a separate artifact.
+        Keys:
+        - cadence_sec, ts_resolution_sec
+        - prb_pct_decimals: {'RRU.PrbTotDl': int, 'RRU.PrbTotUl': int}
+        - energy_power_band: {'ratio_q1': float, 'ratio_q3': float}
+        """
+        dq = {}
+
+        # --- 1) Cadence & timestamp resolution (union of cell + UE timestamps)
+        ts_all = []
+        ts_col = self.column_names.get('timestamp', 'timestamp')
+        if ts_col in cell_data.columns and not cell_data.empty:
+            ts_all.extend(cell_data[ts_col].tolist())
+        if ts_col in ue_data.columns and not ue_data.empty:
+            ts_all.extend(ue_data[ts_col].tolist())
+
+        if ts_all:
+            u = pd.Series(pd.to_datetime(ts_all)).dropna().drop_duplicates().sort_values()
+            if len(u) >= 2:
+                diffs = u.diff().dropna().dt.total_seconds()
+                if not diffs.empty:
+                    cadence = float(np.median(diffs))
+                    pos = diffs[diffs > 0]
+                    res = float(pos.min()) if not pos.empty else cadence
+                    dq['cadence_sec'] = cadence
+                    dq['ts_resolution_sec'] = res
+
+        # --- 2) PRB% decimals auto-detect from cell data
+        prb_dec = {}
+        if 'RRU.PrbTotDl' in cell_data.columns and not cell_data['RRU.PrbTotDl'].dropna().empty:
+            prb_dec['RRU.PrbTotDl'] = int(
+                pd.Series(cell_data['RRU.PrbTotDl'].dropna().astype(str)).str.split('.').str[1].str.len().fillna(0).astype(int).max()
+            )
+        if 'RRU.PrbTotUl' in cell_data.columns and not cell_data['RRU.PrbTotUl'].dropna().empty:
+            prb_dec['RRU.PrbTotUl'] = int(
+                pd.Series(cell_data['RRU.PrbTotUl'].dropna().astype(str)).str.split('.').str[1].str.len().fillna(0).astype(int).max()
+            )
+        if prb_dec:
+            dq['prb_pct_decimals'] = prb_dec
+
+        # --- 3) Energy vs Power ratio IQR (row-level; uses measurement interval)
+        try:
+            from common.constants import MEAS_INTERVAL_SEC  
+            if {'PEE.Energy_interval', 'PEE.AvgPower'}.issubset(cell_data.columns):
+                denom = (cell_data['PEE.AvgPower'].astype(float) * float(MEAS_INTERVAL_SEC))
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    ratio = (cell_data['PEE.Energy_interval'].astype(float) / denom).replace([np.inf, -np.inf], np.nan)
+                rs = ratio.dropna()
+                if len(rs) >= 50:
+                    q1, q3 = np.quantile(rs, [0.25, 0.75])
+                    dq['energy_power_band'] = {'ratio_q1': float(q1), 'ratio_q3': float(q3)}
+        except Exception:
+            # non-fatal; just skip if constants/columns missing
+            pass
+
+        # Metadata (optional)
+        dq['metadata'] = {
+            'created_at': datetime.now().isoformat(),
+            'source': 'Phase 1 training (self-calibrated)'
+        }
+        return dq
+
+    
     
     def _create_metadata_config(self) -> Dict:
         """Create metadata configuration"""
@@ -763,7 +789,8 @@ class Phase1Orchestrator:
             'field_ranges': 'json',
             #'quality_thresholds': 'json',
             'metadata_config': 'json',
-            'sample_windows': 'json'
+            'sample_windows': 'json',
+            'dq_baseline': 'json'
         }
         
         cell_data.to_parquet(processed_dir / 'cell_data_processed.parquet')

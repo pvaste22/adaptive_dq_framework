@@ -161,16 +161,18 @@ class CompletenessDimension(BaseDimension):
         
         component_scores = [c1_score, c2_score, c3_score, c4_score]
         valid_scores = [s for s in component_scores if s is not None]
-        overall_score = float(np.mean(valid_scores)) if valid_scores else None
+        #overall_score = float(np.mean(valid_scores)) if valid_scores else None
+        apr = sum([1 for s in valid_scores if s == 1.0]) / len(valid_scores) if valid_scores else None
+        mpr = float(np.mean(valid_scores)) if valid_scores else None
         coverage = len(valid_scores) / 4.0
 
         self.logger.debug(
             f"Component scores - C1:{c1_score} C2:{c2_score} C3:{c3_score} C4:{c4_score} "
-            f"Overall:{overall_score} Coverage:{coverage:.2f}"
+            f"Overall:{mpr} Coverage:{coverage:.2f}"
         )
     
         return {
-            'score': overall_score,
+            'score': mpr,
             'coverage': coverage,
             'details': {
                 'mandatory_fields_score': c1_score,

@@ -234,8 +234,8 @@ class WindowGenerator:
                 'std': float(np.std(completeness_values)),
                 'min': float(np.min(completeness_values)),
                 'max': float(np.max(completeness_values)),
-                'median': float(np.median(completeness_values)),
-                'above_threshold': sum(1 for c in completeness_values if c >= self.window_specs.get('min_completeness', 0.95))
+                'median': float(np.median(completeness_values))
+                #'above_threshold': sum(1 for c in completeness_values if c >= self.window_specs.get('min_completeness', 0.95))
             },
             'record_counts': {
                 'mean': float(np.mean([w['metadata']['record_counts']['total'] for w in windows])),

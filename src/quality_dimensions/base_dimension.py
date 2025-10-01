@@ -55,53 +55,37 @@ class BaseDimension(ABC):
         self.ue_entity_col = COLUMN_NAMES['ue_entity']
         
         # Load dimension-specific configuration
-        self.dimension_thresholds = self._load_dimension_thresholds(name, config)
+        #self.dimension_thresholds = self._load_dimension_thresholds(name, config)
         
         # Initialize score history for tracking
         self.score_history = []
         
         self.logger.debug(f"Configuration loaded for {name} dimension")
 
+  
 
-    def _load_dimension_thresholds(self,  dimension_name: str, config_path: Optional[Path] = None) -> Dict:
-        """
-        Load dimension-specific thresholds from config.yaml
-    
-        Args:
-            dimension_name: Name of the dimension
-            config_path: Not used anymore, kept for compatibility
-        
-        Returns:
-            Dictionary of thresholds for this dimension
-        """
+    def get_dq_baseline(self):
+        # cache
+        if hasattr(self, '_dq_baseline_cache') and self._dq_baseline_cache is not None:
+            return self._dq_baseline_cache
+
+        b = {}
         try:
-            thresholds = QUALITY_DIMENSION_THRESHOLDS.get(dimension_name, {})
-        
-            if not thresholds:
-                self.logger.warning(f"No thresholds found for {dimension_name}, using empty dict")
-            else:
-                self.logger.debug(f"Loaded {len(thresholds)} threshold groups for {dimension_name}")
+            if hasattr(self, 'load_artifact_baseline'):
+                b = self.load_artifact_baseline('dq_baseline') or {}
+        except Exception:
+            b = {}
 
-            return thresholds
-        
-        except Exception as e:
-            self.logger.error(f"Error loading thresholds: {e}")
-            return {}    
+        if not b:
+            # fallback for old runs: inside metadata_config
+            try:
+                meta = self.load_artifact_baseline('metadata_config') or {}
+                b = meta.get('dq_baseline', {}) or {}
+            except Exception:
+                b = {}
 
-    def get_baseline(self, baseline_name: str) -> Optional[Dict]:
-        """
-        Get a specific baseline from loaded baselines.
-
-        Args:
-            baseline_name: Name of baseline to retrieve
-
-        Returns:
-            Baseline data or None if not found
-        """
-        if baseline_name not in self.baselines:
-            self.logger.warning(f"Baseline '{baseline_name}' not found")
-            return None
-        return self.baselines.get(baseline_name)
+        self._dq_baseline_cache = b
+        return b
     
 
     def load_artifact_baseline(self, artifact_name: str) -> Optional[Dict]:
@@ -139,6 +123,36 @@ class BaseDimension(ABC):
         except Exception as e:
             self.logger.error(f"Error loading artifact {artifact_name}: {e}")
             return None
+
+
+    def _apr_mpr(self, check_series_list):
+        """
+        check_series_list: List[pd.Series|np.ndarray] of booleans (True/False) per row.
+        NA means not applicable -> excluded from MPR; APR uses strict row-wise AND.
+        """
+        mat = []
+        for s in check_series_list:
+            if s is None:
+                continue
+            a = pd.Series(s).astype('float')  # True=1.0, False=0.0, NaN=NA
+            mat.append(a)
+        if not mat:
+            return 0.0, 0.0, 0.0
+
+        M = pd.concat(mat, axis=1)
+        applicable = M.notna()
+        passed = (M == 1.0)
+
+        total_applicable = applicable.sum().sum()
+        total_pass = passed.sum().sum()
+        mpr = float(total_pass / total_applicable) if total_applicable > 0 else 0.0
+
+        row_all = passed.fillna(True).all(axis=1)  # strict AND ignoring NAs
+        apr = float(row_all.mean()) if len(row_all) else 0.0
+
+        coverage = float(applicable.mean().mean())  # fraction of applicable entries overall
+        return apr, mpr, coverage
+
 
     def calculate_check_score(self, value: float, pass_threshold: float, 
                           soft_threshold: float, higher_is_better: bool = True) -> float:
