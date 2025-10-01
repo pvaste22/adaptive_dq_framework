@@ -31,8 +31,7 @@ from common.constants import (
     EXPECTED_PATTERNS,
     DATA_QUIRKS,
     PATHS,
-    SCORING_LEVELS,
-    COMPLETENESS_THRESHOLDS
+    SCORING_LEVELS
 )
 
 
@@ -64,18 +63,7 @@ class CompletenessDimension(BaseDimension):
             self.ue_entity_col
         ]
 
-        self.thresholds = self.dimension_thresholds if self.dimension_thresholds else COMPLETENESS_THRESHOLDS
-        if not self.thresholds:
-            self.logger.warning("No completeness thresholds found, using emergency defaults")
-        self.thresholds = {
-            "C1_mandatory_fields": {"pass": 0.95, "soft": 0.80},
-            "C2_entity_coverage": {
-                "cells": {"pass": 0.95, "soft": 0.85},
-                "ues": {"pass": 0.80, "soft": 0.60}
-            },
-            "C3_temporal_coverage": {"pass": 5, "soft": 4},
-            "C4_field_completeness": {"pass": 0.80, "soft": 0.60, "null_threshold": 0.20}
-        }
+
         # Load Hour-of-Day baselines (temporal_templates) for entity coverage
         self.hod_baselines = self._load_hod_baselines(baselines_path)
 
@@ -202,7 +190,7 @@ class CompletenessDimension(BaseDimension):
                                ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
         C1: Fraction of rows with all mandatory fields present (cells+UEs), 
-            mapped to PASS/SOFT/FAIL via thresholds.
+
         """
         details = {}
         total_rows = (len(cell_data) if not cell_data.empty else 0) + (len(ue_data) if not ue_data.empty else 0)
