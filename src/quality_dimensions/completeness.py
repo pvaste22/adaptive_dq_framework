@@ -31,7 +31,8 @@ from common.constants import (
     EXPECTED_PATTERNS,
     DATA_QUIRKS,
     PATHS,
-    SCORING_LEVELS
+    SCORING_LEVELS,
+    COMPLETENESS_THRESHOLDS
 )
 
 
@@ -63,23 +64,18 @@ class CompletenessDimension(BaseDimension):
             self.ue_entity_col
         ]
 
-        # Load thresholds from config loaded in BaseDimension; fall back to v3.0 defaults if missing
-        defaults = {
+        self.thresholds = self.dimension_thresholds if self.dimension_thresholds else COMPLETENESS_THRESHOLDS
+        if not self.thresholds:
+            self.logger.warning("No completeness thresholds found, using emergency defaults")
+        self.thresholds = {
             "C1_mandatory_fields": {"pass": 0.95, "soft": 0.80},
             "C2_entity_coverage": {
                 "cells": {"pass": 0.95, "soft": 0.85},
-                "ues":   {"pass": 0.80, "soft": 0.60},
+                "ues": {"pass": 0.80, "soft": 0.60}
             },
             "C3_temporal_coverage": {"pass": 5, "soft": 4},
-            "C4_field_completeness": {"pass": 0.80, "soft": 0.60, "null_threshold": 0.20},
+            "C4_field_completeness": {"pass": 0.80, "soft": 0.60, "null_threshold": 0.20}
         }
-        try:
-            cfg = getattr(self, "config", None) or getattr(self, "cfg", None)  # BaseDimension may expose config
-            qdt = (cfg or {}).get("quality_dimension_thresholds", {})
-            self.thresholds = qdt.get("completeness", defaults)
-        except Exception:
-            self.thresholds = defaults
-
         # Load Hour-of-Day baselines (temporal_templates) for entity coverage
         self.hod_baselines = self._load_hod_baselines(baselines_path)
 
@@ -95,24 +91,26 @@ class CompletenessDimension(BaseDimension):
     def _load_hod_baselines(self, baselines_path: Optional[Path]) -> Dict:
         """Load Hour-of-Day baselines from temporal_templates artifact."""
         try:
-            if baselines_path is None:
-                # Try to find the most recent temporal_templates file
-                artifacts_path = Path(PATHS['artifacts']) / 'temporal_templates'
-                if artifacts_path.exists():
-                    pkl_files = list(artifacts_path.glob('*.pkl'))
-                    if pkl_files:
-                        baselines_path = max(pkl_files, key=lambda p: p.stat().st_mtime)
-                        self.logger.debug(f"Loading HoD baselines from {baselines_path}")
-            
+             # Try using parent class method first
+            templates = self.load_artifact_baseline('temporal_templates')
+    
+            if templates:
+                self.logger.info("Successfully loaded HoD baselines using base class loader")
+                return templates
+
+            # Fallback to manual loading if needed
             if baselines_path and baselines_path.exists():
-                with open(baselines_path, 'rb') as f:
-                    templates = pickle.load(f)
-                    self.logger.info("Successfully loaded HoD baselines for entity coverage")
-                    return templates
-            else:
-                self.logger.warning("HoD baselines not found, using fixed expected values")
-                return self._create_default_hod_baselines()
-                
+                try:
+                    with open(baselines_path, 'rb') as f:
+                        templates = pickle.load(f)
+                        self.logger.info("Loaded HoD baselines from provided path")
+                        return templates
+                except Exception as e:
+                    self.logger.error(f"Error loading from provided path: {e}")
+
+            # Final fallback
+            self.logger.warning("HoD baselines not found, using default values")
+            return self._create_default_hod_baselines()
         except Exception as e:
             self.logger.error(f"Error loading HoD baselines: {e}")
             return self._create_default_hod_baselines()

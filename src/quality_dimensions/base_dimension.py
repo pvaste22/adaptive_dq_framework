@@ -20,8 +20,9 @@ sys.path.insert(0, str(project_root))
 # Import from common modules
 from common.constants import (
     COLUMN_NAMES,
-    PATHS
+    PATHS, QUALITY_DIMENSION_THRESHOLDS
 )
+from common.utils import load_artifact
 from common.logger import get_phase2_logger
 
 
@@ -54,7 +55,7 @@ class BaseDimension(ABC):
         self.ue_entity_col = COLUMN_NAMES['ue_entity']
         
         # Load dimension-specific configuration
-        self.dimension_thresholds = self._load_dimension_thresholds(name, config_path)
+        self.dimension_thresholds = self._load_dimension_thresholds(name, config)
         
         # Initialize score history for tracking
         self.score_history = []
@@ -62,33 +63,25 @@ class BaseDimension(ABC):
         self.logger.debug(f"Configuration loaded for {name} dimension")
 
 
-    def _load_dimension_thresholds(self, dimension_name: str, config_path: Optional[Path] = None) -> Dict:
+    def _load_dimension_thresholds(self,  dimension_name: str, config_path: Optional[Path] = None) -> Dict:
         """
         Load dimension-specific thresholds from config.yaml
     
         Args:
             dimension_name: Name of the dimension
-            config_path: Path to config file
+            config_path: Not used anymore, kept for compatibility
         
         Returns:
             Dictionary of thresholds for this dimension
         """
         try:
-            # Use provided path or default from constants
-            if config_path is None:
-                config_path = Path(PATHS.get('config', 'config')) / 'config.yaml'
-
-            if not config_path.exists():
-                self.logger.warning(f"Config file not found at {config_path}, using defaults")
-                return {}
-
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-
-            # Navigate to quality_dimension_thresholds section
-            thresholds = config.get('quality_dimension_thresholds', {}).get(dimension_name, {})
+            thresholds = QUALITY_DIMENSION_THRESHOLDS.get(dimension_name, {})
         
-            self.logger.debug(f"Loaded {len(thresholds)} threshold groups for {dimension_name}")
+            if not thresholds:
+                self.logger.warning(f"No thresholds found for {dimension_name}, using empty dict")
+            else:
+                self.logger.debug(f"Loaded {len(thresholds)} threshold groups for {dimension_name}")
+
             return thresholds
         
         except Exception as e:
@@ -111,8 +104,44 @@ class BaseDimension(ABC):
         return self.baselines.get(baseline_name)
     
 
+    def load_artifact_baseline(self, artifact_name: str) -> Optional[Dict]:
+        """
+        Load baseline artifact using common utils.
+
+        Args:
+            artifact_name: Name of artifact (e.g., 'temporal_templates')
+
+        Returns:
+            Loaded artifact or None if not found
+        """
+        try:
+            # Find latest artifact file
+            artifact_path = Path(PATHS['artifacts']) / artifact_name
+
+            if not artifact_path.exists():
+                self.logger.warning(f"Artifact directory not found: {artifact_path}")
+                return None
+
+            # Get most recent file
+            pkl_files = list(artifact_path.glob('*.pkl'))
+            json_files = list(artifact_path.glob('*.json'))
+            all_files = pkl_files + json_files
+
+            if not all_files:
+                self.logger.warning(f"No artifact files found in {artifact_path}")
+                return None
+
+            latest_file = max(all_files, key=lambda p: p.stat().st_mtime)
+            self.logger.debug(f"Loading artifact from {latest_file}")
+
+            return load_artifact(latest_file)
+
+        except Exception as e:
+            self.logger.error(f"Error loading artifact {artifact_name}: {e}")
+            return None
+
     def calculate_check_score(self, value: float, pass_threshold: float, 
-                          soft_threshold: float, higher_is_better: bool = True) -> Tuple[float, str]:
+                          soft_threshold: float, higher_is_better: bool = True) -> float:
         """
         Calculate PASS/SOFT/FAIL score based on thresholds.
 
@@ -123,25 +152,25 @@ class BaseDimension(ABC):
             higher_is_better: If True, higher values are better
 
         Returns:
-            Tuple of (score, status) where score is 1.0/0.5/0.0 and status is PASS/SOFT/FAIL
+            float: Score between 0-1 
         """
         if value is None or np.isnan(value):
-            return None, 'N/A'
+            return None
 
         if higher_is_better:
             if value >= pass_threshold:
-                return 1.0, 'PASS'
+                return 1.0
             elif value >= soft_threshold:
-                return 0.5, 'SOFT'
+                return 0.5
             else:
-                return 0.0, 'FAIL'
+                return 0.0
         else:
             if value <= pass_threshold:
-                return 1.0, 'PASS'
+                return 1.0
             elif value <= soft_threshold:
-                return 0.5, 'SOFT'
+                return 0.5
             else:
-                return 0.0, 'FAIL'
+                return 0.0
 
     @abstractmethod
     def calculate_score(self, window_data: Dict, baselines: Optional[Dict] = None) -> Dict:

@@ -81,6 +81,17 @@ EXPECTED_PATTERNS = {
     'symmetry_tolerance': PATTERN_TOLERANCES.get('ul_dl_symmetry', 0.15)
 }
 
+# Quality dimension thresholds from config
+QUALITY_DIMENSION_THRESHOLDS = MAIN_CONFIG.get('quality_dimension_thresholds', {})
+
+# Individual dimension thresholds for easy access
+COMPLETENESS_THRESHOLDS = QUALITY_DIMENSION_THRESHOLDS.get('completeness', {})
+VALIDITY_THRESHOLDS = QUALITY_DIMENSION_THRESHOLDS.get('validity', {})
+ACCURACY_THRESHOLDS = QUALITY_DIMENSION_THRESHOLDS.get('accuracy', {})
+CONSISTENCY_THRESHOLDS = QUALITY_DIMENSION_THRESHOLDS.get('consistency', {})
+TIMELINESS_THRESHOLDS = QUALITY_DIMENSION_THRESHOLDS.get('timeliness', {})
+SKEWNESS_THRESHOLDS = QUALITY_DIMENSION_THRESHOLDS.get('skewness', {})
+
 # Expected patterns
 #PATTERN_TOLERANCES = DRIFT_CONFIG.get('pattern_tolerances', {})
 """EXPECTED_PATTERNS = {
