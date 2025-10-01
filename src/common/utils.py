@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import logging
 
-from .constants import VERSIONING, PATHS, WINDOW_SPECS, PATTERNS
+from .constants import VERSIONING, PATHS, WINDOW_SPECS
 from .exceptions import ArtifactError, DataValidationError
 
 logger = logging.getLogger(__name__)
@@ -35,16 +35,17 @@ def save_artifact(data: Any,
     timestamp = datetime.now().strftime(VERSIONING['timestamp_format'])
     
     # Determine file extension
-    if isinstance(data, (dict, list)):
-        ext = 'pkl'
+    if isinstance(data, dict) and _is_json_serializable(data):
+        ext = 'json'
     elif isinstance(data, pd.DataFrame):
         ext = 'parquet'
     elif isinstance(data, np.ndarray):
         ext = 'npy'
-    elif isinstance(data, dict) and _is_json_serializable(data):
-        ext = 'json'        
+    elif isinstance(data, (dict, list)):
+        ext = 'pkl'
     else:
         ext = 'pkl'
+
     
     # Create filename
     filename = VERSIONING['artifact_name_pattern'].format(
@@ -188,8 +189,8 @@ def validate_window_completeness(cell_count: int, ue_count: int,
         'total_completeness': total_completeness,
         'cell_records': cell_count,
         'ue_records': ue_count,
-        'total_records': cell_count + ue_count,
-        'meets_threshold': total_completeness >= WINDOW_SPECS.get('min_completeness', 0.95)
+        'total_records': cell_count + ue_count
+        #'meets_threshold': total_completeness >= WINDOW_SPECS.get('min_completeness', 0.95)
     }
 
 

@@ -480,11 +480,12 @@ class Phase1Orchestrator:
                 'description': 'Fraction of records with MIMO disabled'
             }
     
-        # CQI no measurement rate (now NaN after correction)
+        # CQI no measurement rate 
         if 'DRB.UECqiDl' in ue_data.columns:
-            cqi_nan_rate = ue_data['DRB.UECqiDl'].isna().mean()
+            #cqi_nan_rate = ue_data['DRB.UECqiDl'].isna().mean()
+            cqi_zero_rate = (ue_data['DRB.UECqiDl']==0).mean()
             patterns['known_patterns']['cqi_no_measurement_rate'] = {
-                'value': float(cqi_nan_rate),
+                'value': float(cqi_zero_rate),
                 'expected': EXPECTED_PATTERNS['cqi_no_measurement_rate'],
                 'description': 'Fraction of UE records with no CQI measurement'
             }
@@ -826,11 +827,11 @@ class Phase1Orchestrator:
         windows_dir = self.paths['historical_windows']
         windows_dir.mkdir(parents=True, exist_ok=True)
         
-        sample_windows = windows[:50] if len(windows) > 50 else windows
-        windows_file = windows_dir / f'sample_windows_{timestamp}.pkl'
-        with open(windows_file, 'wb') as f:
-            pickle.dump(sample_windows, f)
-        artifact_paths['sample_windows_file'] = str(windows_file)
+        #sample_windows = windows[:50] if len(windows) > 50 else windows
+        #windows_file = windows_dir / f'sample_windows_{timestamp}.pkl'
+        #with open(windows_file, 'wb') as f:
+            #pickle.dump(sample_windows, f)
+        #artifact_paths['sample_windows_file'] = str(windows_file)
         
         # Create artifact registry
         registry = {

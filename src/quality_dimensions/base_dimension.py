@@ -15,12 +15,13 @@ import yaml
 
 # Add project root to path for imports
 project_root = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(project_root))
+src_path = project_root / 'src'
+sys.path.insert(0, str(src_path))
 
 # Import from common modules
 from common.constants import (
     COLUMN_NAMES,
-    PATHS, QUALITY_DIMENSION_THRESHOLDS
+    PATHS
 )
 from common.utils import load_artifact
 from common.logger import get_phase2_logger
