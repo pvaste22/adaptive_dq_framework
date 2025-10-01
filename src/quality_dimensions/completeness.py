@@ -153,7 +153,7 @@ class CompletenessDimension(BaseDimension):
         window_id = window_data.get('metadata', {}).get('window_id', 'unknown')
         self.logger.debug(f"Processing window {window_id}: {len(cell_data)} cell records, {len(ue_data)} UE records")
         
-        # Calculate individual completeness components (each returns PASS=1.0 / SOFT=0.5 / FAIL=0.0 / None)
+        # Calculate individual completeness components 
         c1_score, c1_details = self._score_mandatory_fields(cell_data, ue_data)
         c2_score, c2_details = self._score_entity_presence(cell_data, ue_data)
         c3_score, c3_details = self._score_time_continuity(cell_data, ue_data)
@@ -162,7 +162,16 @@ class CompletenessDimension(BaseDimension):
         component_scores = [c1_score, c2_score, c3_score, c4_score]
         valid_scores = [s for s in component_scores if s is not None]
         #overall_score = float(np.mean(valid_scores)) if valid_scores else None
-        apr = sum([1 for s in valid_scores if s == 1.0]) / len(valid_scores) if valid_scores else None
+        row_ok_parts = []
+        if not cell_data.empty:
+            row_ok_parts.append(cell_data[self.mandatory_fields_cell].notna().all(axis=1))
+        if not ue_data.empty:
+            row_ok_parts.append(ue_data[self.mandatory_fields_ue].notna().all(axis=1))
+        if row_ok_parts:
+            row_ok = pd.concat(row_ok_parts, ignore_index=True)
+            apr = float(row_ok.mean())
+        else:
+            apr = 0.0
         mpr = float(np.mean(valid_scores)) if valid_scores else None
         coverage = len(valid_scores) / 4.0
 
@@ -173,6 +182,7 @@ class CompletenessDimension(BaseDimension):
     
         return {
             'score': mpr,
+            'apr': apr,
             'coverage': coverage,
             'details': {
                 'mandatory_fields_score': c1_score,
@@ -217,9 +227,7 @@ class CompletenessDimension(BaseDimension):
         fraction_complete_rows = (cell_ok + ue_ok) / float(total_rows)
         details['fraction_rows_all_mandatory'] = float(fraction_complete_rows)
 
-        t = self.thresholds.get("C1_mandatory_fields", {})
-        p, s = t.get("pass", 0.95), t.get("soft", 0.80)
-        score = 1.0 if fraction_complete_rows >= p else (0.5 if fraction_complete_rows >= s else 0.0)
+        score = float(fraction_complete_rows)
         self.logger.debug(f"C1: fraction={fraction_complete_rows:.3f} => score={score}")
         return score, details
     
@@ -275,31 +283,24 @@ class CompletenessDimension(BaseDimension):
         details['ratio_cells'] = ratio_cells
         details['ratio_ues'] = ratio_ues
 
-        t = self.thresholds.get("C2_entity_coverage", {})
-        c_pass, c_soft = t.get("cells", {}).get("pass", 0.95), t.get("cells", {}).get("soft", 0.85)
-        u_pass, u_soft = t.get("ues",   {}).get("pass", 0.80), t.get("ues",   {}).get("soft", 0.60)
-
-        if ratio_cells < c_soft or ratio_ues < u_soft:
-            score = 0.0
-        elif ratio_cells >= c_pass and ratio_ues >= u_pass:
-            score = 1.0
-        else:
-            score = 0.5
-
+        rc = max(0.0, min(1.0, ratio_cells))
+        ru = max(0.0, min(1.0, ratio_ues))
+        score = float((rc + ru) / 2.0)
         self.logger.debug(
             f"C2: hour={hour} cells {actual_cells:.2f}/{expected_cells:.0f} ({ratio_cells:.2f}), "
-            f"UEs {actual_ues:.2f}/{expected_ues:.0f} ({ratio_ues:.2f}) => score={score}"
+            f"UEs {actual_ues:.2f}/{expected_ues:.0f} ({ratio_ues:.2f}) => rate={score:.2f}"
         )
         return score, details
+    
     
     def _score_time_continuity(self, cell_data: pd.DataFrame,
                               ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
         C3: Temporal coverage by unique timestamp count in the window.
-            PASS if count >= 5, SOFT if >= 4, else FAIL. Thresholds from config.
         """
         details = {}
-        # Union of unique timestamps across both datasets
+
+        # Union of unique timestamps
         ts_union = set()
         if not cell_data.empty and self.timestamp_col in cell_data.columns:
             ts_union.update(pd.Series(cell_data[self.timestamp_col]).dropna().unique().tolist())
@@ -308,16 +309,24 @@ class CompletenessDimension(BaseDimension):
 
         ts_count = len(ts_union)
         details['unique_timestamps'] = ts_count
-
         if ts_count == 0:
-            return None, details  # N/A if no timestamps at all
+            return None, details
 
-        t = self.thresholds.get("C3_temporal_coverage", {})
-        p, s = int(t.get("pass", 5)), int(t.get("soft", 4))
-        score = 1.0 if ts_count >= p else (0.5 if ts_count >= s else 0.0)
-        self.logger.debug(f"C3: ts_count={ts_count} => score={score}")
+        # baseline-driven expected count
+        dq = self.get_dq_baseline()  # from BaseDimension
+        cadence = float(dq.get('cadence_sec', 60.0))
+        # res = float(dq.get('ts_resolution_sec', 1.0))  # if needed later
+
+        ts_sorted = sorted(pd.to_datetime(list(ts_union)))
+        win_span = (ts_sorted[-1] - ts_sorted[0]).total_seconds() if ts_count > 1 else 0.0
+        expected = int(round(win_span / cadence)) + 1 if win_span > 0 else ts_count
+        expected = max(expected, 1)
+
+        score = float(min(1.0, ts_count / expected))
+        details['expected_timestamps'] = int(expected)
+        self.logger.debug(f"C3: got={ts_count} expected={expected} => rate={score:.2f}")
         return score, details
-    
+
     def _score_field_completeness(self, cell_data: pd.DataFrame,
                                  ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
@@ -351,25 +360,16 @@ class CompletenessDimension(BaseDimension):
         if total_fields == 0:
             return None, {'note': 'no eligible fields to evaluate'}
 
-        t = self.thresholds.get("C4_field_completeness", {})
-        null_thr = float(t.get("null_threshold", 0.20))
-        passed = 0
-
+        null_fracs = []
         for df, col in fields:
-            # Field passes if < null_threshold nulls in the window
             null_ratio = float(df[col].isna().mean()) if len(df) > 0 else 0.0
-            if null_ratio < null_thr:
-                passed += 1
+            null_fracs.append(null_ratio)
 
-        fraction_fields_passing = passed / float(total_fields)
+        avg_non_null = float(np.mean([1.0 - x for x in null_fracs])) if null_fracs else 0.0
         details['fields_evaluated'] = int(total_fields)
-        details['fields_passing'] = int(passed)
-        details['fraction_fields_passing'] = float(fraction_fields_passing)
+        details['avg_non_null_rate'] = avg_non_null
+        # (optional) details['null_threshold_used'] = float(self.thresholds.get("C4_field_completeness", {}).get("null_threshold", 0.20))
 
-        p, s = float(t.get("pass", 0.80)), float(t.get("soft", 0.60))
-        score = 1.0 if fraction_fields_passing >= p else (0.5 if fraction_fields_passing >= s else 0.0)
-        self.logger.debug(
-            f"C4: {passed}/{total_fields} fields passing (<{null_thr:.2f} nulls) => "
-            f"fraction={fraction_fields_passing:.3f} score={score}"
-        )
+        score = avg_non_null
+        self.logger.debug(f"C4: avg_non_null_rate={score:.3f}")
         return score, details
