@@ -34,7 +34,7 @@ from data_processing.data_loader import DataLoader
 from data_processing.unit_converter import UnitConverter
 from data_processing.window_generator import WindowGenerator
 from common.logger import get_phase1_logger
-from common.constants import PATHS, VERSIONING, COLUMN_NAMES
+from common.constants import PATHS, VERSIONING, COLUMN_NAMES, EXPECTED_ENTITIES
 
 
 class Phase1Orchestrator:
@@ -75,6 +75,7 @@ class Phase1Orchestrator:
         self.paths = PATHS
         self.versioning = VERSIONING
         self.column_names = COLUMN_NAMES
+        self.expected_entities = EXPECTED_ENTITIES
     
     def _setup_logging(self) -> logging.Logger:
         """Setup logging for Phase 1"""
@@ -460,47 +461,99 @@ class Phase1Orchestrator:
         return correlations
     
     def _create_pattern_baselines(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
-        """Create pattern baselines for accuracy validation"""
-        from common.constants import EXPECTED_PATTERNS
-    
+        """Create pattern baselines (GLOBAL learned bands: IQR across cells)"""
         patterns = {
-            'known_patterns': {},
+            'learned_bands': {'global': {}},
             'metadata': {
                 'creation_time': datetime.now().isoformat(),
-                'tolerance': EXPECTED_PATTERNS.get('mimo_tolerance', 0.10)
+                'note': 'Self-calibrated bands from training data (no config tolerances)'
             }
         }
-    
-        # MIMO zero rate pattern
-        if 'CARR.AverageLayersDl' in cell_data.columns:
-            mimo_zero_rate = (cell_data['CARR.AverageLayersDl'] == 0).mean()
-            patterns['known_patterns']['mimo_zero_rate'] = {
-                'value': float(mimo_zero_rate),
-                'expected': EXPECTED_PATTERNS['mimo_zero_rate'],
-                'description': 'Fraction of records with MIMO disabled'
-            }
-    
-        # CQI no measurement rate 
-        if 'DRB.UECqiDl' in ue_data.columns:
-            #cqi_nan_rate = ue_data['DRB.UECqiDl'].isna().mean()
-            cqi_zero_rate = (ue_data['DRB.UECqiDl']==0).mean()
-            patterns['known_patterns']['cqi_no_measurement_rate'] = {
-                'value': float(cqi_zero_rate),
-                'expected': EXPECTED_PATTERNS['cqi_no_measurement_rate'],
-                'description': 'Fraction of UE records with no CQI measurement'
-            }
-    
-        # UL/DL symmetry pattern
-        if 'DRB.UEThpUl' in cell_data.columns and 'DRB.UEThpDl' in cell_data.columns:
-            valid_data = cell_data[['DRB.UEThpUl', 'DRB.UEThpDl']].dropna()
-            if len(valid_data) > 100:
-                ul_dl_corr = valid_data['DRB.UEThpUl'].corr(valid_data['DRB.UEThpDl'])
-                patterns['known_patterns']['ul_dl_symmetry'] = {
-                    'value': float(ul_dl_corr),
-                    'expected': EXPECTED_PATTERNS['ul_dl_symmetry'],
-                    'description': 'Correlation between UL and DL throughput'
+
+        cell_col = self.column_names.get('cell_entity', 'Viavi.Cell.Name') # keep existing
+        # --- 1) MIMO zero-rate (cell data)
+        mimo_band = {"median": None, "q25": None, "q75": None, "n": 0}
+        mimo_pref_col = 'CARR.AverageLayersDl'
+        mimo_fallback_col = 'RRU.MaxLayerDlMimo'
+        use_col = None
+        if {mimo_pref_col, cell_col}.issubset(cell_data.columns):
+            use_col = mimo_pref_col
+        elif {mimo_fallback_col, cell_col}.issubset(cell_data.columns):
+            use_col = mimo_fallback_col
+        if use_col and not cell_data.empty:
+            cdf = cell_data[[cell_col, use_col]].copy()
+            cdf[use_col] = pd.to_numeric(cdf[use_col], errors='coerce')
+            g = cdf.groupby(cell_col, dropna=True)[use_col]
+            per_cell_rate = g.apply(lambda s: float((s == 0).mean()) if s.notna().any() else np.nan).dropna()
+            if not per_cell_rate.empty:
+                q25, q75 = per_cell_rate.quantile([0.25, 0.75])
+                mimo_band = {
+                    "median": float(per_cell_rate.median()),
+                    "q25": float(q25),
+                    "q75": float(q75),
+                    "n": int(per_cell_rate.size)
                 }
-    
+        patterns['learned_bands']['global']['mimo_zero_layers'] = mimo_band
+
+        # --- 2) CQI no-measurement rate (UE data) — per-timestamp global fraction → IQR
+        cqi_band = {"median": None, "q25": None, "q75": None, "n": 0}
+        ts_col = self.column_names.get('timestamp', 'timestamp')
+        if {'DRB.UECqiDl', ts_col}.issubset(ue_data.columns) and not ue_data.empty:
+            udf = ue_data[[ts_col, 'DRB.UECqiDl']].copy()
+            udf[ts_col] = pd.to_datetime(udf[ts_col], errors='coerce')
+            udf['is_cqi0'] = pd.to_numeric(udf['DRB.UECqiDl'], errors='coerce').eq(0)
+            # per-timestamp fraction of CQI==0 across all UEs
+            frac_by_ts = (udf.groupby(ts_col, dropna=True)['is_cqi0']
+                             .mean()
+                             .dropna())
+            if not frac_by_ts.empty:
+                q25, q75 = frac_by_ts.quantile([0.25, 0.75])
+                cqi_band = {
+                    "median": float(frac_by_ts.median()),
+                    "q25": float(q25),
+                    "q75": float(q75),
+                    "n": int(frac_by_ts.size)
+                }
+        patterns['learned_bands']['global']['cqi_no_report'] = cqi_band
+        # (Optional) UL counterpart for future use — same logic on 'DRB.UECqiUl'
+        if {'DRB.UECqiUl', ts_col}.issubset(ue_data.columns) and not ue_data.empty:
+            udf_ul = ue_data[[ts_col, 'DRB.UECqiUl']].copy()
+            udf_ul[ts_col] = pd.to_datetime(udf_ul[ts_col], errors='coerce')
+            udf_ul['is_cqi0'] = pd.to_numeric(udf_ul['DRB.UECqiUl'], errors='coerce').eq(0)
+            frac_by_ts_ul = (udf_ul.groupby(ts_col, dropna=True)['is_cqi0'].mean().dropna())
+            if not frac_by_ts_ul.empty:
+                q25, q75 = frac_by_ts_ul.quantile([0.25, 0.75])
+                patterns['learned_bands']['global']['cqi_ul_no_report'] = {
+                    "median": float(frac_by_ts_ul.median()),
+                    "q25": float(q25),
+                    "q75": float(q75),
+                    "n": int(frac_by_ts_ul.size)
+                }             
+
+        # --- 3) UL-DL correlation (cell data) — Pearson r per cell
+        corr_band = {"median": None, "q25": None, "q75": None, "n": 0}
+        if {'DRB.UEThpDl', 'DRB.UEThpUl', cell_col}.issubset(cell_data.columns) and not cell_data.empty:
+            tdf = cell_data[[cell_col, 'DRB.UEThpDl', 'DRB.UEThpUl']].copy()
+            tdf['DRB.UEThpDl'] = pd.to_numeric(tdf['DRB.UEThpDl'], errors='coerce')
+            tdf['DRB.UEThpUl'] = pd.to_numeric(tdf['DRB.UEThpUl'], errors='coerce')
+            def _safe_corr(grp):
+                dl = grp['DRB.UEThpDl']; ul = grp['DRB.UEThpUl']
+                mask = dl.notna() & ul.notna()
+                if mask.sum() >= 30:
+                    try: return float(dl[mask].corr(ul[mask]))
+                    except Exception: return np.nan
+                return np.nan
+            per_cell_corr = tdf.groupby(cell_col, dropna=True).apply(_safe_corr).dropna()
+            if not per_cell_corr.empty:
+                q25, q75 = per_cell_corr.quantile([0.25, 0.75])
+                corr_band = {
+                    "median": float(per_cell_corr.median()),
+                    "q25": float(q25),
+                    "q75": float(q75),
+                    "n": int(per_cell_corr.size)
+                }
+        patterns['learned_bands']['global']['ul_dl_correlation'] = corr_band
+
         return patterns
     
 
