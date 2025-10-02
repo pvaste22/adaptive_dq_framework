@@ -142,52 +142,45 @@ class CompletenessDimension(BaseDimension):
         self.logger.debug(f"Processing window {window_id}: {len(cell_data)} cell records, {len(ue_data)} UE records")
         
         # Calculate individual completeness components 
-        c1_score, c1_details = self._score_mandatory_fields(cell_data, ue_data)
-        c2_score, c2_details = self._score_entity_presence(cell_data, ue_data)
-        c3_score, c3_details = self._score_time_continuity(cell_data, ue_data)
-        c4_score, c4_details = self._score_field_completeness(cell_data, ue_data)
+        c1_pass, c1_total, c1_details = self._score_mandatory_fields(cell_data, ue_data)
+        c2_pass, c2_total, c2_details = self._score_entity_presence(cell_data, ue_data)
+        c3_pass, c3_total, c3_details = self._score_time_continuity(cell_data, ue_data)
+        c4_pass, c4_total, c4_details = self._score_field_completeness(cell_data, ue_data)
         
-        component_scores = [c1_score, c2_score, c3_score, c4_score]
-        valid_scores = [s for s in component_scores if s is not None]
-        #overall_score = float(np.mean(valid_scores)) if valid_scores else None
-        row_ok_parts = []
-        if not cell_data.empty:
-            row_ok_parts.append(cell_data[self.mandatory_fields_cell].notna().all(axis=1))
-        if not ue_data.empty:
-            row_ok_parts.append(ue_data[self.mandatory_fields_ue].notna().all(axis=1))
-        if row_ok_parts:
-            row_ok = pd.concat(row_ok_parts, ignore_index=True)
-            apr = float(row_ok.mean())
-        else:
-            apr = 0.0
-        mpr = float(np.mean(valid_scores)) if valid_scores else None
-        coverage = len(valid_scores) / 4.0
+        
+        # Collect as pass/total arrays
+        check_series = []
+        fail_counts = {}
+        for cname, p, t in [
+            ("mandatory_fields", c1_pass, c1_total),
+            ("entity_presence", c2_pass, c2_total),
+            ("time_continuity", c3_pass, c3_total),
+            ("field_completeness", c4_pass, c4_total)
+        ]:
+            if p is not None and t is not None and t > 0:
+                s = pd.Series([1]*p + [0]*(t-p))
+                check_series.append(s)
+                fail_counts[cname] = t - p
+            else:
+                fail_counts[cname] = None
 
-        self.logger.debug(
-            f"Component scores - C1:{c1_score} C2:{c2_score} C3:{c3_score} C4:{c4_score} "
-            f"Overall:{mpr} Coverage:{coverage:.2f}"
-        )
-    
+        # Aggregate with base class method
+        apr, mpr, coverage = self._apr_mpr(check_series)
+
         return {
             'score': mpr,
             'apr': apr,
             'coverage': coverage,
             'details': {
-                'mandatory_fields_score': c1_score,
-                'entity_presence_score': c2_score,
-                'time_continuity_score': c3_score,
-                'field_completeness_score': c4_score,
-                'measurements': {
-                    'mandatory_fields': c1_details,
-                    'entity_presence': c2_details,
-                    'time_continuity': c3_details,
-                    'field_completeness': c4_details
-                }
+                'mandatory_fields': c1_details,
+                'entity_presence': c2_details,
+                'time_continuity': c3_details,
+                'field_completeness': c4_details,
+                'fail_counts': fail_counts
             }
         }
     
-    def _score_mandatory_fields(self, cell_data: pd.DataFrame, 
-                               ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
+    def _score_mandatory_fields(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
         """
         C1: Fraction of rows with all mandatory fields present (cells+UEs), 
 
@@ -198,26 +191,25 @@ class CompletenessDimension(BaseDimension):
             return None, {'note': 'no rows in window'}
 
         # Row-wise completeness: all mandatory fields present
-        cell_ok = 0
+        passed = 0
         if not cell_data.empty:
             present_mask = cell_data[self.mandatory_fields_cell].notna().all(axis=1)
-            cell_ok = int(present_mask.sum())
-            details['cell_rows_with_all_mandatory'] = cell_ok
+            passed += int(present_mask.sum())
+            details['cell_rows_with_all_mandatory'] = int(present_mask.sum())
             details['cell_total_rows'] = int(len(cell_data))
 
-        ue_ok = 0
         if not ue_data.empty:
             present_mask = ue_data[self.mandatory_fields_ue].notna().all(axis=1)
-            ue_ok = int(present_mask.sum())
-            details['ue_rows_with_all_mandatory'] = ue_ok
+            passed += int(present_mask.sum())
+            details['ue_rows_with_all_mandatory'] = int(present_mask.sum())
             details['ue_total_rows'] = int(len(ue_data))
 
-        fraction_complete_rows = (cell_ok + ue_ok) / float(total_rows)
+        fraction_complete_rows = passed / float(total_rows)
         details['fraction_rows_all_mandatory'] = float(fraction_complete_rows)
 
-        score = float(fraction_complete_rows)
-        self.logger.debug(f"C1: fraction={fraction_complete_rows:.3f} => score={score}")
-        return score, details
+    
+        self.logger.debug(f"C1: fraction={fraction_complete_rows:.3f} => score={float(fraction_complete_rows)}")
+        return passed, total_rows, details
     
     def _score_entity_presence(self, cell_data: pd.DataFrame,
                               ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
@@ -228,12 +220,11 @@ class CompletenessDimension(BaseDimension):
         details = {}
 
         # Determine window hour from timestamps (prefer earliest timestamp present)
-        def _infer_hour(df_list: List[pd.DataFrame]) -> Optional[int]:
+        def _infer_hour(df_list):
             for df in df_list:
                 if not df.empty and self.timestamp_col in df.columns:
                     ts = df[self.timestamp_col].dropna().iloc[0]
                     try:
-                        # Handle epoch seconds or ISO-8601
                         if isinstance(ts, (int, float, np.integer, np.floating)):
                             return int(pd.to_datetime(ts, unit='s').hour)
                         return int(pd.to_datetime(ts).hour)
@@ -243,16 +234,14 @@ class CompletenessDimension(BaseDimension):
 
         hour = _infer_hour([cell_data, ue_data])
         if hour is None:
-            return None, {'note': 'could not infer hour for HoD baselines'}
+            return None, None, {'note': 'could not infer hour for HoD baselines'}
 
-        # Expected entities (HoD medians)
         expected_cells = float(self.hod_baselines['cells']['hod_median'][hour])
         expected_ues   = float(self.hod_baselines['ues']['hod_median'][hour])
         details['expected_cells_hod'] = expected_cells
         details['expected_ues_hod'] = expected_ues
         details['hour'] = hour
 
-        # Actual average unique entities reporting per timestamp
         actual_cells = 0.0
         if not cell_data.empty and self.timestamp_col in cell_data.columns and self.cell_entity_col in cell_data.columns:
             cells_per_ts = cell_data.groupby(self.timestamp_col)[self.cell_entity_col].nunique()
@@ -271,14 +260,11 @@ class CompletenessDimension(BaseDimension):
         details['ratio_cells'] = ratio_cells
         details['ratio_ues'] = ratio_ues
 
-        rc = max(0.0, min(1.0, ratio_cells))
-        ru = max(0.0, min(1.0, ratio_ues))
-        score = float((rc + ru) / 2.0)
-        self.logger.debug(
-            f"C2: hour={hour} cells {actual_cells:.2f}/{expected_cells:.0f} ({ratio_cells:.2f}), "
-            f"UEs {actual_ues:.2f}/{expected_ues:.0f} ({ratio_ues:.2f}) => rate={score:.2f}"
-        )
-        return score, details
+        # Convert to pass/total counts
+        passed = int(actual_cells + actual_ues)
+        total = int(expected_cells + expected_ues)
+
+        return passed, total, details
     
     
     def _score_time_continuity(self, cell_data: pd.DataFrame,
@@ -298,10 +284,9 @@ class CompletenessDimension(BaseDimension):
         ts_count = len(ts_union)
         details['unique_timestamps'] = ts_count
         if ts_count == 0:
-            return None, details
+            return None, None, details
 
-        # baseline-driven expected count
-        dq = self.get_dq_baseline()  # from BaseDimension
+        dq = self.get_dq_baseline()
         cadence = float(dq.get('cadence_sec', 60.0))
         # res = float(dq.get('ts_resolution_sec', 1.0))  # if needed later
 
@@ -310,10 +295,13 @@ class CompletenessDimension(BaseDimension):
         expected = int(round(win_span / cadence)) + 1 if win_span > 0 else ts_count
         expected = max(expected, 1)
 
-        score = float(min(1.0, ts_count / expected))
         details['expected_timestamps'] = int(expected)
-        self.logger.debug(f"C3: got={ts_count} expected={expected} => rate={score:.2f}")
-        return score, details
+
+        # Pass/total counts
+        passed = ts_count
+        total = expected
+
+        return passed, total, details
 
     def _score_field_completeness(self, cell_data: pd.DataFrame,
                                  ue_data: pd.DataFrame) -> Tuple[Optional[float], Dict]:
@@ -331,14 +319,7 @@ class CompletenessDimension(BaseDimension):
         def eligible_fields(df: pd.DataFrame, mandatory: List[str]) -> List[str]:
             if df.empty:
                 return []
-            cols = []
-            for c in df.columns:
-                if c in mandatory:
-                    continue
-                if c in skip_fields_exact:
-                    continue
-                cols.append(c)
-            return cols
+            return [c for c in df.columns if c not in mandatory and c not in skip_fields_exact]
 
         cell_fields = eligible_fields(cell_data, self.mandatory_fields_cell)
         ue_fields   = eligible_fields(ue_data, self.mandatory_fields_ue)
@@ -346,18 +327,19 @@ class CompletenessDimension(BaseDimension):
 
         total_fields = len(fields)
         if total_fields == 0:
-            return None, {'note': 'no eligible fields to evaluate'}
+            return None, None, {'note': 'no eligible fields'}
 
-        null_fracs = []
+        non_null_count = 0
         for df, col in fields:
-            null_ratio = float(df[col].isna().mean()) if len(df) > 0 else 0.0
-            null_fracs.append(null_ratio)
+            if len(df) > 0:
+                non_null_count += int(df[col].notna().sum())
 
-        avg_non_null = float(np.mean([1.0 - x for x in null_fracs])) if null_fracs else 0.0
+        total_cells = sum(len(df) for df, _ in fields)
         details['fields_evaluated'] = int(total_fields)
-        details['avg_non_null_rate'] = avg_non_null
-        # (optional) details['null_threshold_used'] = float(self.thresholds.get("C4_field_completeness", {}).get("null_threshold", 0.20))
+        details['non_null_cells'] = non_null_count
+        details['total_cells'] = total_cells
 
-        score = avg_non_null
-        self.logger.debug(f"C4: avg_non_null_rate={score:.3f}")
-        return score, details
+        passed = non_null_count
+        total = total_cells
+
+        return passed, total, details

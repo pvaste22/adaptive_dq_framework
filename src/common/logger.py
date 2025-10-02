@@ -33,48 +33,54 @@ def setup_logger(name: str,
         Configured logger instance
     """
     logger = logging.getLogger(name)
-    
-    # Avoid duplicate handlers
-    if logger.handlers:
-        return logger
-    
     logger.setLevel(level)
+    logger.propagate = False
+
+    #Console handler ensure 
+    has_console = any(isinstance(h, logging.StreamHandler) for h in logger.handlers)
+    if not has_console:
+        console_handler = logging.StreamHandler()
+        console_format = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler.setFormatter(console_format)
+        console_handler.setLevel(level)
+        logger.addHandler(console_handler)
     
-    # Console handler with standard format
-    console_handler = logging.StreamHandler()
-    console_format = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    console_handler.setFormatter(console_format)
-    console_handler.setLevel(level)
-    logger.addHandler(console_handler)
     
     # File handler with detailed format
     if log_file:
         log_path = Path(log_file)
-        # Ensure directory exists
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            file_handler = logging.handlers.RotatingFileHandler(
-                log_file, 
-                maxBytes=max_bytes, 
-                backupCount=backup_count,
-                encoding='utf-8'
-            )
-            
-            file_format = logging.Formatter(
-                '%(asctime)s - %(name)s - %(levelname)s - %(module)s.%(funcName)s:%(lineno)d - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'
-            )
-            file_handler.setFormatter(file_format)
-            file_handler.setLevel(logging.DEBUG)  # More detailed for files
-            logger.addHandler(file_handler)
-        except (OSError, IOError) as e:
-            logger.warning(f"Could not create file handler for {log_file}: {e}")
-    
-    return logger
+        today_str = datetime.now().strftime('%Y%m%d')
+
+        has_today_file = any(
+            isinstance(h, logging.handlers.RotatingFileHandler)
+            and h.baseFilename.endswith(f"{today_str}.log")
+            for h in logger.handlers
+        )
+
+        if not has_today_file:
+            try:
+                file_handler = logging.handlers.RotatingFileHandler(
+                    log_file,
+                    maxBytes=max_bytes,
+                    backupCount=backup_count,
+                    encoding='utf-8'
+                )
+                file_format = logging.Formatter(
+                    '%(asctime)s - %(name)s - %(levelname)s - '
+                    '%(module)s.%(funcName)s:%(lineno)d - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                file_handler.setFormatter(file_format)
+                file_handler.setLevel(logging.DEBUG)
+                logger.addHandler(file_handler)
+            except (OSError, IOError) as e:
+                logger.warning(f"Could not create file handler for {log_file}: {e}")
+
+    return logger    
 
 def get_phase_logger(phase: str, component: str) -> logging.Logger:
     """
