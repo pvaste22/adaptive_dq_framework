@@ -75,7 +75,7 @@ class UnitConverter:
         if 'PEE.Energy' not in df.columns:
             self.logger.warning("PEE.Energy column not found - skipping energy conversion")
             return df
-        
+        df['PEE.Energy'] = pd.to_numeric(df['PEE.Energy'], errors='coerce')
         self.logger.info("Converting cumulative energy to per-interval...")
         
         # Sort by entity and timestamp for proper differencing
@@ -95,22 +95,32 @@ class UnitConverter:
         first_timestamps = df.groupby(entity_col).head(1).index
         
         df['PEE.Energy_reset'] = df['PEE.Energy_interval'] < 0
-        #df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
+        df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
 
         if 'PEE.AvgPower' in df.columns:
+            df['PEE.AvgPower'] = pd.to_numeric(df['PEE.AvgPower'], errors='coerce')
             df['PEE.Energy_expected'] = (df['PEE.AvgPower'] / 1000.0) * df['__dt_hours']
+            needs_fill = df['PEE.Energy_interval'].isna()
+            filled_count = int(needs_fill.sum())
+            df.loc[needs_fill, 'PEE.Energy_interval'] = df.loc[needs_fill, 'PEE.Energy_expected']
+            self.logger.debug("Energy fill from AvgPower×Δt — first/reset rows filled: %d", filled_count)
             # Calculate first interval's energy from power (Power × Time = Energy)
-            df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy_expected']
+            #df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy_expected']
             #df['PEE.Energy_interval'] = df['PEE.Energy_interval'].fillna(df['PEE.Energy_expected'])
             self.logger.debug(f"Calculated first interval energy from average power for {len(first_timestamps)} cells")
         else:
             self.logger.warning("PEE.AvgPower not found - using cumulative value for first records (less accurate)")
             #df.loc[first_timestamps, 'PEE.Energy_interval'] = df.loc[first_timestamps, 'PEE.Energy']
             df.loc[first_timestamps, 'PEE.Energy_interval'] = np.nan
-        #df.loc[df['PEE.Energy_reset'], 'PEE.Energy_interval'] = np.nan
+            
+        
         df.drop(columns=['__dt_hours'], inplace=True)
         df['energy_conversion_applied'] = True
         self.logger.info("Energy conversion completed")
+        total_rows = len(df)
+        reset_rows = int(df['PEE.Energy_reset'].sum())
+        nan_after = int(df['PEE.Energy_interval'].isna().sum())
+        self.logger.info("Energy conversion completed | rows=%d, resets=%d, remaining_NaN_intervals=%d", total_rows, reset_rows, nan_after)
         
         return df
     

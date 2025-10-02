@@ -20,7 +20,7 @@ import logging
 import json
 import pickle
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import warnings
 import pickle
 from pathlib import Path
@@ -678,60 +678,87 @@ class Phase1Orchestrator:
         Keys:
         - cadence_sec, ts_resolution_sec
         - prb_pct_decimals: {'RRU.PrbTotDl': int, 'RRU.PrbTotUl': int}
-        - energy_power_band: {'ratio_q1': float, 'ratio_q3': float}
+        - energy_power_band: {'ratio_q1': float, 'ratio_q3': float, 'n': int}
         """
-        dq = {}
+        dq: Dict[str, Any] = {}
 
         # --- 1) Cadence & timestamp resolution (union of cell + UE timestamps)
-        ts_all = []
         ts_col = self.column_names.get('timestamp', 'timestamp')
+        ts_all: List[pd.Timestamp] = []
         if ts_col in cell_data.columns and not cell_data.empty:
-            ts_all.extend(cell_data[ts_col].tolist())
+            ts_all.extend(pd.to_datetime(cell_data[ts_col], errors='coerce').tolist())
         if ts_col in ue_data.columns and not ue_data.empty:
-            ts_all.extend(ue_data[ts_col].tolist())
+            ts_all.extend(pd.to_datetime(ue_data[ts_col], errors='coerce').tolist())
 
-        if ts_all:
-            u = pd.Series(pd.to_datetime(ts_all)).dropna().drop_duplicates().sort_values()
-            if len(u) >= 2:
-                diffs = u.diff().dropna().dt.total_seconds()
-                if not diffs.empty:
-                    cadence = float(np.median(diffs))
-                    pos = diffs[diffs > 0]
-                    res = float(pos.min()) if not pos.empty else cadence
-                    dq['cadence_sec'] = cadence
-                    dq['ts_resolution_sec'] = res
+        ts_u = pd.Series(ts_all, dtype="datetime64[ns]").dropna().drop_duplicates().sort_values()
+        if len(ts_u) >= 2:
+            diffs = ts_u.diff().dropna().dt.total_seconds()
+            if not diffs.empty:
+                cadence = float(np.median(diffs))
+                pos = diffs[diffs > 0]
+                res = float(pos.min()) if not pos.empty else cadence
+                dq['cadence_sec'] = cadence
+                dq['ts_resolution_sec'] = res
+        # Fallbacks if missing
+        if 'cadence_sec' not in dq:
+            dq['cadence_sec'] = float(getattr(self, 'measurement_interval', 60))
+        if 'ts_resolution_sec' not in dq:
+            dq['ts_resolution_sec'] = dq['cadence_sec']
 
-        # --- 2) PRB% decimals auto-detect from cell data
-        prb_dec = {}
-        if 'RRU.PrbTotDl' in cell_data.columns and not cell_data['RRU.PrbTotDl'].dropna().empty:
-            prb_dec['RRU.PrbTotDl'] = int(
-                pd.Series(cell_data['RRU.PrbTotDl'].dropna().astype(str)).str.split('.').str[1].str.len().fillna(0).astype(int).max()
-            )
-        if 'RRU.PrbTotUl' in cell_data.columns and not cell_data['RRU.PrbTotUl'].dropna().empty:
-            prb_dec['RRU.PrbTotUl'] = int(
-                pd.Series(cell_data['RRU.PrbTotUl'].dropna().astype(str)).str.split('.').str[1].str.len().fillna(0).astype(int).max()
-            )
+        # --- 2) PRB% decimals (auto-detect): use MODE of decimal lengths
+        prb_dec: Dict[str, int] = {}
+        for prb_col in ['RRU.PrbTotDl', 'RRU.PrbTotUl']:
+            if prb_col in cell_data.columns:
+                s = pd.to_numeric(cell_data[prb_col], errors='coerce').dropna()
+                if not s.empty:
+                    # count decimal places by string repr
+                    dec_len = s.map(lambda x: len(str(x).split('.')[-1]) if '.' in str(x) else 0)
+                    # mode (most common) is more robust than max
+                    prb_dec[prb_col] = int(dec_len.mode().iloc[0])
         if prb_dec:
             dq['prb_pct_decimals'] = prb_dec
 
-        # --- 3) Energy vs Power ratio IQR (row-level; uses measurement interval)
-        try:
-            from common.constants import MEAS_INTERVAL_SEC  
-            if {'PEE.Energy_interval', 'PEE.AvgPower'}.issubset(cell_data.columns):
-                denom = (cell_data['PEE.AvgPower'].astype(float) * float(MEAS_INTERVAL_SEC))
-                with np.errstate(divide='ignore', invalid='ignore'):
-                    ratio = (cell_data['PEE.Energy_interval'].astype(float) / denom).replace([np.inf, -np.inf], np.nan)
-                rs = ratio.dropna()
-                if len(rs) >= 50:
-                    q1, q3 = np.quantile(rs, [0.25, 0.75])
-                    dq['energy_power_band'] = {'ratio_q1': float(q1), 'ratio_q3': float(q3)}
-        except Exception:
-            # non-fatal; just skip if constants/columns missing
-            pass
+        # --- 3) Energy vs Power ratio IQR (global; exclude resets/NaNs)
+        # Expect: Energy_interval[kWh] / (AvgPower[kW] * Δt_hours)
+        energy_col_int = 'PEE.Energy_interval'
+        power_col = self.column_names.get('avg_power', 'PEE.AvgPower')
+        entity_col = self.column_names.get('cell_entity', 'Viavi.Cell.Name')
 
-        # Metadata (optional)
+        ratio = pd.Series(dtype='float64')
+        if {energy_col_int, power_col, ts_col, entity_col}.issubset(cell_data.columns) and not cell_data.empty:
+            en = cell_data[[entity_col, ts_col, energy_col_int, power_col]].copy()
+            en[ts_col] = pd.to_datetime(en[ts_col], errors='coerce')
+            en[energy_col_int] = pd.to_numeric(en[energy_col_int], errors='coerce')
+            en[power_col] = pd.to_numeric(en[power_col], errors='coerce')
+
+            en = en.sort_values([entity_col, ts_col])
+            # per-entity Δt in hours with fallback to configured interval
+            en['__dt_h'] = en.groupby(entity_col)[ts_col].diff().dt.total_seconds().div(3600.0)
+            fallback_h = float(getattr(self, 'measurement_interval', 60)) / 3600.0
+            en['__dt_h'] = en['__dt_h'].fillna(fallback_h).clip(lower=1e-9)
+
+            # exclude resets/NaN intervals if flag exists
+            if 'PEE.Energy_reset' in cell_data.columns:
+                en = en.join(cell_data[['PEE.Energy_reset']], how='left')
+                mask_valid = (en['PEE.Energy_reset'] != True) & en[energy_col_int].notna() & en[power_col].notna()
+            else:
+                mask_valid = en[energy_col_int].notna() & en[power_col].notna()
+
+            # Power in W -> kW
+            denom = (en.loc[mask_valid, power_col] / 1000.0) * en.loc[mask_valid, '__dt_h']
+            with np.errstate(divide='ignore', invalid='ignore'):
+                ratio = (en.loc[mask_valid, energy_col_int] / denom).replace([np.inf, -np.inf], np.nan)
+            ratio = ratio.dropna()
+
+        if not ratio.empty and len(ratio) >= 30:
+            q1, q3 = np.quantile(ratio, [0.25, 0.75])
+            dq['energy_power_band'] = {'ratio_q1': float(q1), 'ratio_q3': float(q3), 'n': int(ratio.size)}
+        else:
+            dq['energy_power_band'] = {'ratio_q1': None, 'ratio_q3': None, 'n': int(ratio.size if not ratio.empty else 0)}
+
+        # Metadata
         dq['metadata'] = {
-            'created_at': datetime.now().isoformat(),
+            'created_at': datetime.now().isoformat(timespec='seconds'),
             'source': 'Phase 1 training (self-calibrated)'
         }
         return dq
