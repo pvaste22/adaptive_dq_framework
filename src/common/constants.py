@@ -127,7 +127,8 @@ DATA_FILES = {
 COLUMN_NAMES = VIAVI_CONFIG.get('column_names', {
     'timestamp': 'timestamp',
     'cell_entity': 'Viavi.Cell.Name',
-    'ue_entity': 'Viavi.UE.Name'
+    'ue_entity': 'Viavi.UE.Name',
+    'avg_power': 'PEE.AvgPower'
 })
 
 # Metric groups

@@ -21,7 +21,7 @@
 
 ## Window Generation
 - [ ] 5-minute windows created
-- [ ] 40% overlap implemented
+- [ ] 80% overlap implemented
 - [ ] Completeness validation works
 - [ ] Windows with <95% completeness dropped
 - [ ] Window metadata saved

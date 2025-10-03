@@ -25,10 +25,7 @@ import warnings
 import pickle
 from pathlib import Path
 
-# Add src to path for imports
-project_root = Path(__file__).parent.parent.parent
-src_path = project_root / 'src'
-sys.path.insert(0, str(src_path))
+
 
 from data_processing.data_loader import DataLoader
 from data_processing.unit_converter import UnitConverter
@@ -778,8 +775,17 @@ class Phase1Orchestrator:
         entity_col = self.column_names.get('cell_entity', 'Viavi.Cell.Name')
 
         ratio = pd.Series(dtype='float64')
-        if {energy_col_int, power_col, ts_col, entity_col}.issubset(cell_data.columns) and not cell_data.empty:
-            en = cell_data[[entity_col, ts_col, energy_col_int, power_col]].copy()
+        required_cols = [entity_col, ts_col, energy_col_int, power_col]
+        optional_cols = []
+        if 'PEE.Energy_reset' in cell_data.columns:
+            optional_cols.append('PEE.Energy_reset')
+        if 'PEE.Energy_imputed' in cell_data.columns:
+            optional_cols.append('PEE.Energy_imputed')
+
+        select_cols = required_cols + optional_cols
+        
+        if set(required_cols).issubset(cell_data.columns) and not cell_data.empty:
+            en = cell_data[select_cols].copy() 
             en[ts_col] = pd.to_datetime(en[ts_col], errors='coerce')
             en[energy_col_int] = pd.to_numeric(en[energy_col_int], errors='coerce')
             en[power_col] = pd.to_numeric(en[power_col], errors='coerce')
@@ -791,17 +797,35 @@ class Phase1Orchestrator:
             en['__dt_h'] = en['__dt_h'].fillna(fallback_h).clip(lower=1e-9)
 
             # exclude resets/NaN intervals if flag exists
-            if 'PEE.Energy_reset' in cell_data.columns:
-                en = en.join(cell_data[['PEE.Energy_reset']], how='left')
-                mask_valid = (en['PEE.Energy_reset'] != True) & en[energy_col_int].notna() & en[power_col].notna()
-            else:
-                mask_valid = en[energy_col_int].notna() & en[power_col].notna()
+            base_mask = en[energy_col_int].notna() & en[power_col].notna() & en['__dt_h'].notna()
+            extras = []
+            if 'PEE.Energy_reset' in en.columns:
+                #en = en.join(cell_data[['PEE.Energy_reset']], how='left')
+                #en = cell_data[[entity_col, ts_col, energy_col_int, power_col, 'PEE.Energy_reset']].copy()
+                #extras.append(en['PEE.Energy_reset'] != True)
+                base_mask = base_mask & (en['PEE.Energy_reset'] != True)
+            if 'PEE.Energy_imputed' in en.columns:
+                #en = en.join(cell_data[['PEE.Energy_imputed']], how='left')
+                #en = cell_data[[entity_col, ts_col, energy_col_int, power_col, 'PEE.Energy_imputed']].copy()
+                #extras.append(en['PEE.Energy_imputed'] != True)
+                base_mask = base_mask & (en['PEE.Energy_imputed'] != True)
+
+            #base = en[energy_col_int].notna() & en[power_col].notna() & en['__dt_h'].notna()
+            #mask_valid = base if not extras else base & np.logical_and.reduce(extras)
+            mask_valid = base_mask
+            #else:
+                #mask_valid = en[energy_col_int].notna() & en[power_col].notna()
 
             # Power in W -> kW
             denom = (en.loc[mask_valid, power_col] / 1000.0) * en.loc[mask_valid, '__dt_h']
-            with np.errstate(divide='ignore', invalid='ignore'):
-                ratio = (en.loc[mask_valid, energy_col_int] / denom).replace([np.inf, -np.inf], np.nan)
-            ratio = ratio.dropna()
+            #with np.errstate(divide='ignore', invalid='ignore'):
+                #ratio = (en.loc[mask_valid, energy_col_int] / denom).replace([np.inf, -np.inf], np.nan)
+            nonzero_mask = denom > 0
+            if nonzero_mask.any():
+            #idx = denom.index[pos]
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    ratio = (en.loc[mask_valid, energy_col_int][nonzero_mask] / denom[nonzero_mask]).replace([np.inf, -np.inf], np.nan)
+                ratio = ratio.dropna()
 
         if not ratio.empty and len(ratio) >= 30:
             q1, q3 = np.quantile(ratio, [0.25, 0.75])

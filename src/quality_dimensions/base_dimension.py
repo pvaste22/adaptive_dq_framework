@@ -13,10 +13,6 @@ from datetime import datetime
 import sys
 import yaml
 
-# Add project root to path for imports
-project_root = Path(__file__).resolve().parents[2]
-src_path = project_root / 'src'
-sys.path.insert(0, str(src_path))
 
 # Import from common modules
 from common.constants import (
@@ -126,33 +122,71 @@ class BaseDimension(ABC):
             return None
 
 
-    def _apr_mpr(self, check_series_list):
+    def _apr_mpr(self, check_series_list, check_tuples_list=None):
         """
-        check_series_list: List[pd.Series|np.ndarray] of booleans (True/False) per row.
-        NA means not applicable -> excluded from MPR; APR uses strict row-wise AND.
+        Mixed-input APR/MPR calculator.
+        Args:
+            check_series_list: List[pd.Series] - row-wise boolean checks (for APR + MPR)
+            check_tuples_list: List[Tuple[int, int]] - (pass, total) aggregate checks (for MPR only)
+    
+        Returns:
+            apr, mpr, coverage, fail_dict
         """
         mat = []
-        for s in check_series_list:
-            if s is None:
+        for s in check_series_list or []:
+            if s is None or len(s) == 0:
                 continue
             a = pd.Series(s).astype('float')  # True=1.0, False=0.0, NaN=NA
             mat.append(a)
-        if not mat:
-            return 0.0, 0.0, 0.0
-
-        M = pd.concat(mat, axis=1)
-        applicable = M.notna()
-        passed = (M == 1.0)
-
-        total_applicable = applicable.sum().sum()
-        total_pass = passed.sum().sum()
-        mpr = float(total_pass / total_applicable) if total_applicable > 0 else 0.0
-
-        row_all = passed.fillna(True).all(axis=1)  # strict AND ignoring NAs
-        apr = float(row_all.mean()) if len(row_all) else 0.0
-
-        coverage = float(applicable.mean().mean())  # fraction of applicable entries overall
-        return apr, mpr, coverage
+        if mat:
+            lengths = [len(s) for s in mat]
+            if len(set(lengths)) > 1:
+                self.logger.warning(f"Series length mismatch: {lengths}. Truncating to minimum.")
+                min_len = min(lengths)
+                mat = [s.iloc[:min_len].reset_index(drop=True) for s in mat]
+        
+            M_rows = pd.concat(mat, axis=1, ignore_index=True)
+            row_passed = (M_rows == 1.0)
+            row_all_passed = row_passed.fillna(True).all(axis=1)  # Strict AND per row
+            apr = float(row_all_passed.mean()) if len(row_all_passed) > 0 else 0.0
+        
+            # MPR contribution from row-wise
+            row_applicable = M_rows.notna().sum().sum()
+            row_pass_count = row_passed.sum().sum()
+        else:
+            apr = 0.0
+            row_applicable = 0
+            row_pass_count = 0
+    
+        # aggregate check (for MPR only) 
+        agg_applicable = 0
+        agg_pass_count = 0
+    
+        for pass_count, total_count in (check_tuples_list or []):
+            if total_count is not None and total_count > 0:
+                agg_applicable += total_count
+                agg_pass_count += pass_count if pass_count is not None else 0
+    
+        # combined MPR
+        total_applicable = row_applicable + agg_applicable
+        total_passed = row_pass_count + agg_pass_count
+    
+        mpr = float(total_passed / total_applicable) if total_applicable > 0 else 0.0
+    
+        # Coverage: fraction of checks that were applicable
+        total_checks = len(check_series_list or []) + len(check_tuples_list or [])
+        applicable_checks = len([s for s in (check_series_list or []) if len(s) > 0])
+        applicable_checks += len([t for t in (check_tuples_list or []) if t[1] is not None and t[1] > 0])
+        coverage = float(applicable_checks / total_checks) if total_checks > 0 else 0.0
+    
+        # Fail counts
+        fail_dict = {
+            'row_wise_fails': int(row_applicable - row_pass_count),
+            'aggregate_fails': int(agg_applicable - agg_pass_count),
+            'total_fails': int(total_applicable - total_passed)
+        }
+    
+        return apr, mpr, coverage, fail_dict
 
 
     def calculate_check_score(self, value: float, pass_threshold: float, 

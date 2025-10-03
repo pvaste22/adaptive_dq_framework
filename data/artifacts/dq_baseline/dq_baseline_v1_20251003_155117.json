@@ -1,0 +1,17 @@
+{
+  "cadence_sec": 60.0,
+  "ts_resolution_sec": 60.0,
+  "prb_pct_decimals": {
+    "RRU.PrbTotDl": 1,
+    "RRU.PrbTotUl": 1
+  },
+  "energy_power_band": {
+    "ratio_q1": 0.8239985601845116,
+    "ratio_q3": 1.3511349674232438,
+    "n": 524159
+  },
+  "metadata": {
+    "created_at": "2025-10-03T15:51:16",
+    "source": "Phase 1 training (self-calibrated)"
+  }
+}
