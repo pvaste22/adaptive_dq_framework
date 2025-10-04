@@ -21,6 +21,7 @@ class ConsistencyDimension(BaseDimension):
         self.recon_band_prb = dq.get('ue_cell_prb_ratio') or {}
         self.logger.info(f"Consistency init: thp band={self.recon_band_thp }, prb_band={self.recon_band_prb}")
         self.recon_min_n = int(getattr(self, 'reconciliation_min_samples', 30))
+        self.recon_window_min_samples = 5
         self.ts_col   = COLUMN_NAMES.get('timestamp', 'timestamp')
         self.cell_col = COLUMN_NAMES.get('cell_entity', 'Viavi.Cell.Name')
         self.ue_col   = COLUMN_NAMES.get('ue_entity', 'Viavi.UE.Name')
@@ -199,20 +200,40 @@ class ConsistencyDimension(BaseDimension):
             return (0, 0), {'note': 'zero denominator (power×time)'}
 
         ratio = energy_sum / power_kWh_sum
-        # Learned band (IQR) from dq_baseline (Phase-1); fallback 0.8–1.2 if missing
-        q1 = float(self.energy_band.get('ratio_q1')) if 'ratio_q1' in self.energy_band else 0.8
-        q3 = float(self.energy_band.get('ratio_q3')) if 'ratio_q3' in self.energy_band else 1.2
-        passed = int((ratio >= q1) and (ratio <= q3))
-        total = 1
+        # Learned band (IQR) from dq_baseline (Phase-1); fallback 0.5–2.0 if missing
+        
+        # --- pass/fail: learned band (if reliable) OR coarse guard-rails ---
+        min_n = self.recon_min_n  # 30 by default
+        band = None
+        band_n = 0
+        if self.energy_band:
+            band_n = int(self.energy_band.get('n', 0))
+            has_band = ('ratio_q1' in self.energy_band) and ('ratio_q3' in self.energy_band)
+            reliable = has_band and (band_n == 0 or band_n >= min_n)
+            if reliable:
+                band = (float(self.energy_band['ratio_q1']),
+                        float(self.energy_band['ratio_q3']))
+
+        # coarse rails from design v2.1
+        coarse_lo, coarse_hi = 0.5, 2.0
+
+        band_pass   = (band is not None) and (band[0] <= ratio <= band[1])
+        coarse_pass = (coarse_lo <= ratio <= coarse_hi)
+        passed, total = int(band_pass or coarse_pass), 1
 
         details.update({
             'ratio': ratio,
-            'q1': q1, 'q3': q3,
+            'q1': (band[0] if band else None),
+            'q3': (band[1] if band else None),
+            'coarse_lo': coarse_lo, 'coarse_hi': coarse_hi,
+            'used_band': ('learned' if band else 'coarse'),
+            'band_n': band_n,
             'energy_sum_kWh': energy_sum,
             'power_time_kWh': power_kWh_sum,
             'rows_used': int(mask.sum())
         })
         return (passed, total), details
+
 
     def _cs3_throughput_reconciliation(self, cell: pd.DataFrame, ue: pd.DataFrame):
         details = {}
@@ -227,45 +248,80 @@ class ConsistencyDimension(BaseDimension):
         if not (self.recon_band_thp .get('dl') or self.recon_band_thp .get('ul')):
             return (0, 0), {'note': 'reconciliation band unavailable'}
 
+
         c = cell[[ts, thp_dl, thp_ul]].copy()
         u = ue[[ts, thp_dl, thp_ul]].copy()
         c[ts] = pd.to_datetime(c[ts], errors='coerce'); c = c.dropna(subset=[ts])
         u[ts] = pd.to_datetime(u[ts], errors='coerce'); u = u.dropna(subset=[ts])
 
-        cg = c.groupby(ts, as_index=True).agg({thp_dl:'sum', thp_ul:'sum'}).rename(columns={thp_dl:'cell_dl', thp_ul:'cell_ul'})
-        ug = u.groupby(ts, as_index=True).agg({thp_dl:'sum', thp_ul:'sum'}).rename(columns={thp_dl:'ue_dl',   thp_ul:'ue_ul'})
+        # --- SNAP to cadence grid so Cell & UE align on same ticks ---
+        step   = pd.to_timedelta(self.cadence_sec, unit='s')
+        anchor = min(c[ts].min(), u[ts].min()).floor(f'{int(self.cadence_sec)}S')
+
+        def snap(s: pd.Series) -> pd.Series:
+            k = np.rint((s - anchor) / step).astype(int)
+            return anchor + k * step
+
+        c['__t'] = snap(c[ts]); u['__t'] = snap(u[ts])
+
+        cg = c.groupby('__t', as_index=True).agg({thp_dl:'sum', thp_ul:'sum'}).rename(
+            columns={thp_dl:'cell_dl', thp_ul:'cell_ul'}
+        )
+        ug = u.groupby('__t', as_index=True).agg({thp_dl:'sum', thp_ul:'sum'}).rename(
+            columns={thp_dl:'ue_dl',   thp_ul:'ue_ul'}
+        )
         g = cg.join(ug, how='inner')
         if g.empty:
-            return (0, 0), {'note': 'no overlapping timestamps'}
+            return (0, 0), {'note': 'no overlapping timestamps after snap'}
+
 
         rows = []
 
         # DL
         if self.recon_band_thp.get('dl'):
-            mask = g['cell_dl'] > 0  
-            r = (g.loc[mask, 'ue_dl']/g.loc[mask, 'cell_dl']).replace([np.inf, -np.inf], np.nan).dropna()
-            if r.size >= 1:
-                q25, q75 = self.recon_band_thp['dl']['q25'], self.recon_band_thp['dl']['q75']
+            mask = g['cell_dl'] > 0
+            r = (g.loc[mask, 'ue_dl'] / g.loc[mask, 'cell_dl']).replace([np.inf, -np.inf], np.nan).dropna()
+            if r.size >= self.recon_window_min_samples:
+                q25 = float(self.recon_band_thp['dl']['q25']); q75 = float(self.recon_band_thp['dl']['q75'])
+                iqr = max(q75 - q25, 1e-9)
+                lo  = q25 - 1.5 * iqr
+                hi  = q75 + 1.5 * iqr
+
                 med = float(np.median(r))
                 cov = float(((r >= q25) & (r <= q75)).mean())
-                band_pass = (q25 <= med <= q75)
+                band_pass   = (lo <= med <= hi)
                 coverage_ok = (cov >= 0.5)
+
                 passed, total = int(band_pass or coverage_ok), 1
-                rows.append((passed, total, {'side':'dl','q25':q25,'q75':q75,'median_win':med,'coverage_in_iqr':cov,'n_win':int(r.size)}))
+                rows.append((passed, total, {
+                    'side':'dl','q25':q25,'q75':q75,'iqr':iqr,'lo':lo,'hi':hi,
+                    'median_win':med,'coverage_in_iqr':cov,'n_win':int(r.size)
+                }))
+            else:
+                rows.append((0, 0, {'side':'dl','note':f'insufficient window samples ({r.size}<{self.recon_window_min_samples})'}))
 
         # UL
         if self.recon_band_thp.get('ul'):
             mask = g['cell_ul'] > 0
-            r = (g.loc[mask, 'ue_ul']/g.loc[mask, 'cell_ul']).replace([np.inf, -np.inf], np.nan).dropna()
-            if r.size >= 1:
-                q25, q75 = self.recon_band_thp ['ul']['q25'], self.recon_band_thp ['ul']['q75']
+            r = (g.loc[mask, 'ue_ul'] / g.loc[mask, 'cell_ul']).replace([np.inf, -np.inf], np.nan).dropna()
+            if r.size >= self.recon_window_min_samples:
+                q25 = float(self.recon_band_thp['ul']['q25']); q75 = float(self.recon_band_thp['ul']['q75'])
+                iqr = max(q75 - q25, 1e-9)
+                lo  = q25 - 1.5 * iqr
+                hi  = q75 + 1.5 * iqr
+
                 med = float(np.median(r))
                 cov = float(((r >= q25) & (r <= q75)).mean())
-                band_pass = (q25 <= med <= q75)
+                band_pass   = (lo <= med <= hi)
                 coverage_ok = (cov >= 0.5)
-                passed, total = int(band_pass or coverage_ok), 1
-                rows.append((passed, total, {'side': 'ul', 'q25': q25, 'q75': q75, 'median_win': med, 'coverage_in_iqr':cov, 'n_win': int(r.size)}))
 
+                passed, total = int(band_pass or coverage_ok), 1
+                rows.append((passed, total, {
+                    'side':'ul','q25':q25,'q75':q75,'iqr':iqr,'lo':lo,'hi':hi,
+                    'median_win':med,'coverage_in_iqr':cov,'n_win':int(r.size)
+                }))
+            else:
+                rows.append((0, 0, {'side':'ul','note':f'insufficient window samples ({r.size}<{self.recon_window_min_samples})'}))
         if not rows:
             return (0, 0), {'note': 'no valid ratios in window'}
 
@@ -292,37 +348,60 @@ class ConsistencyDimension(BaseDimension):
         c[ts] = pd.to_datetime(c[ts], errors='coerce'); c = c.dropna(subset=[ts])
         u[ts] = pd.to_datetime(u[ts], errors='coerce'); u = u.dropna(subset=[ts])
 
-        cg = c.groupby(ts, as_index=True).agg({prb_dl:'sum', prb_ul:'sum'}).rename(columns={prb_dl:'cell_dl', prb_ul:'cell_ul'})
-        ug = u.groupby(ts, as_index=True).agg({prb_dl:'sum', prb_ul:'sum'}).rename(columns={prb_dl:'ue_dl',   prb_ul:'ue_ul'})
+        # --- SNAP to cadence grid so Cell & UE align on same ticks ---
+        step   = pd.to_timedelta(self.cadence_sec, unit='s')
+        anchor = min(c[ts].min(), u[ts].min()).floor(f'{int(self.cadence_sec)}S')
+
+        def snap(s: pd.Series) -> pd.Series:
+            k = np.rint((s - anchor) / step).astype(int)
+            return anchor + k * step
+
+        c['__t'] = snap(c[ts]); u['__t'] = snap(u[ts])
+
+        cg = c.groupby('__t', as_index=True).agg({prb_dl:'sum', prb_ul:'sum'}).rename(
+            columns={prb_dl:'cell_dl', prb_ul:'cell_ul'}
+        )
+        ug = u.groupby('__t', as_index=True).agg({prb_dl:'sum', prb_ul:'sum'}).rename(
+            columns={prb_dl:'ue_dl',   prb_ul:'ue_ul'}
+        )
         g = cg.join(ug, how='inner')
         if g.empty:
-            return (0, 0), {'note': 'no overlapping timestamps'}
+            return (0, 0), {'note': 'no overlapping timestamps after snap'}
+
 
         rows = []
         # DL
         if self.recon_band_prb.get('dl'):
             mask = g['cell_dl'] > 0
             r = (g.loc[mask, 'ue_dl'] / g.loc[mask, 'cell_dl']).replace([np.inf, -np.inf], np.nan).dropna()
-            if r.size >= 1:
-                q25, q75 = self.recon_band_prb['dl']['q25'], self.recon_band_prb['dl']['q75']
-                med = float(np.median(r))
-                cov = float(((r >= q25) & (r <= q75)).mean())
-                band_pass = (q25 <= med <= q75)
-                coverage_ok = (cov >= 0.5)
-                passed, total = int(band_pass or coverage_ok), 1
-                rows.append((passed, total, {'side':'dl','q25':q25,'q75':q75,'median_win':med, 'coverage_in_iqr':cov, 'n_win':int(r.size)}))
+            if r.size >= self.recon_window_min_samples:
+                q25 = float(self.recon_band_prb['dl']['q25']); q75 = float(self.recon_band_prb['dl']['q75'])
+                iqr = max(q75 - q25, 1e-9); lo = q25 - 1.5*iqr; hi = q75 + 1.5*iqr
+                med = float(np.median(r));  cov = float(((r >= q25) & (r <= q75)).mean())
+                passed, total = int((lo <= med <= hi) or (cov >= 0.5)), 1
+                rows.append((passed, total, {
+                    'side':'dl','q25':q25,'q75':q75,'iqr':iqr,'lo':lo,'hi':hi,
+                    'median_win':med,'coverage_in_iqr':cov,'n_win':int(r.size)
+                }))
+            else:
+                rows.append((0, 0, {'side':'dl','note':f'insufficient window samples ({r.size}<{self.recon_window_min_samples})'}))
+
         # UL
         if self.recon_band_prb.get('ul'):
             mask = g['cell_ul'] > 0
             r = (g.loc[mask, 'ue_ul'] / g.loc[mask, 'cell_ul']).replace([np.inf, -np.inf], np.nan).dropna()
-            if r.size >= 1:
-                q25, q75 = self.recon_band_prb['ul']['q25'], self.recon_band_prb['ul']['q75']
-                med = float(np.median(r))
-                cov = float(((r >= q25) & (r <= q75)).mean())
-                band_pass = (q25 <= med <= q75)
-                coverage_ok = (cov >= 0.5)
-                passed, total = int(band_pass or coverage_ok), 1
-                rows.append((passed, total, {'side':'ul','q25':q25,'q75':q75,'median_win':med, 'coverage_in_iqr':cov, 'n_win':int(r.size)}))
+            if r.size >= self.recon_window_min_samples:
+                q25 = float(self.recon_band_prb['ul']['q25']); q75 = float(self.recon_band_prb['ul']['q75'])
+                iqr = max(q75 - q25, 1e-9); lo = q25 - 1.5*iqr; hi = q75 + 1.5*iqr
+                med = float(np.median(r));  cov = float(((r >= q25) & (r <= q75)).mean())
+                passed, total = int((lo <= med <= hi) or (cov >= 0.5)), 1
+                rows.append((passed, total, {
+                    'side':'ul','q25':q25,'q75':q75,'iqr':iqr,'lo':lo,'hi':hi,
+                    'median_win':med,'coverage_in_iqr':cov,'n_win':int(r.size)
+                }))
+            else:
+                rows.append((0, 0, {'side':'ul','note':f'insufficient window samples ({r.size}<{self.recon_window_min_samples})'}))
+
 
         if not rows:
             return (0, 0), {'note': 'no valid PRB ratios in window'}

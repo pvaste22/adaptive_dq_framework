@@ -831,7 +831,7 @@ class Phase1Orchestrator:
                 ratio = ratio.dropna()
 
         if not ratio.empty and len(ratio) >= 30:
-            q1, q3 = np.quantile(ratio, [0.10, 0.90])
+            q1, q3 = np.quantile(ratio, [0.25, 0.75])
             dq['energy_power_band'] = {'ratio_q1': float(q1), 'ratio_q3': float(q3), 'n': int(ratio.size)}
         else:
             dq['energy_power_band'] = {'ratio_q1': None, 'ratio_q3': None, 'n': int(ratio.size if not ratio.empty else 0)}
@@ -871,7 +871,7 @@ class Phase1Orchestrator:
                 min_n = int(getattr(self, 'reconciliation_min_samples', 30))  # make config-driven if you want
                 def iqr_band(s: pd.Series):
                     if s.size < min_n: return None
-                    q25, q50, q75 = np.percentile(s, [10, 50, 90])
+                    q25, q50, q75 = np.percentile(s, [25, 50, 75])
                     return {'q25': float(q25), 'q50': float(q50), 'q75': float(q75), 'n': int(s.size)}
 
                 dl_band = iqr_band(ratio_dl)
@@ -916,7 +916,7 @@ class Phase1Orchestrator:
                 min_n = int(getattr(self, 'reconciliation_min_samples', 30))
                 def iqr_band(s: pd.Series):
                     if s.size < min_n: return None
-                    q25, q50, q75 = np.percentile(s, [10, 50, 90])
+                    q25, q50, q75 = np.percentile(s, [25, 50, 75])
                     return {'q25': float(q25), 'q50': float(q50), 'q75': float(q75), 'n': int(s.size)}
 
                 dl_band = iqr_band(ratio_dl)
