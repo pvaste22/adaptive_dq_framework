@@ -147,7 +147,7 @@ class BaseDimension(ABC):
         
             M_rows = pd.concat(mat, axis=1, ignore_index=True)
             row_passed = (M_rows == 1.0)
-            row_all_passed = row_passed.fillna(True).all(axis=1)  # Strict AND per row
+            row_all_passed = (M_rows.isna() | (M_rows == 1.0)).all(axis=1) # Strict AND per row
             apr = float(row_all_passed.mean()) if len(row_all_passed) > 0 else 0.0
         
             # MPR contribution from row-wise

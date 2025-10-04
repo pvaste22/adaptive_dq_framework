@@ -46,6 +46,8 @@ class TimelinessDimension(BaseDimension):
         # T3: Monotonicity / no out-of-order (row-wise)
         t3_series, t3_details = self._row_monotonic_ok(cell, ue)
 
+        self.logger.info(f"Timeliness initialized: T1 pass={t1_details['passed'] / t1_details['applicable']}, t3 pass={t3_details['passed'] / t3_details['applicable']}")
+
         apr, mpr, coverage, fails = self._apr_mpr(
             check_series_list=[t1_series, t3_series],
             check_tuples_list=[t2_tuple]
@@ -100,6 +102,7 @@ class TimelinessDimension(BaseDimension):
         series = pd.concat(s_all, axis=0, ignore_index=True) if s_all else pd.Series([], dtype='float')
 
         total_applicable = int(series.notna().sum())
+        t1total = int(series.sum())
         passed = int((series == 1.0).sum())
         details.update({'applicable': total_applicable, 'passed': passed})
         return series, details
@@ -181,6 +184,7 @@ class TimelinessDimension(BaseDimension):
         if s2 is not None: s_all.append(s2)
 
         series = pd.concat(s_all, axis=0, ignore_index=True) if s_all else pd.Series([], dtype='float')
+        t3total = int(series.sum())
         total_applicable = int(series.notna().sum())
         passed = int((series == 1.0).sum())
         details.update({'applicable': total_applicable, 'passed': passed})

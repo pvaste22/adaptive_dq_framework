@@ -1,0 +1,610 @@
+{
+  "sample_windows": [
+    {
+      "window_id": "window_000000_20221231_160000",
+      "path": "training/v0/windows/window_000000_20221231_160000",
+      "start_time": "2022-12-31T16:00:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000101_20221231_174100",
+      "path": "training/v0/windows/window_000101_20221231_174100",
+      "start_time": "2022-12-31T17:41:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000203_20221231_192300",
+      "path": "training/v0/windows/window_000203_20221231_192300",
+      "start_time": "2022-12-31T19:23:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000305_20221231_210500",
+      "path": "training/v0/windows/window_000305_20221231_210500",
+      "start_time": "2022-12-31T21:05:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000407_20221231_224700",
+      "path": "training/v0/windows/window_000407_20221231_224700",
+      "start_time": "2022-12-31T22:47:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000508_20230101_002800",
+      "path": "training/v0/windows/window_000508_20230101_002800",
+      "start_time": "2023-01-01T00:28:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000610_20230101_021000",
+      "path": "training/v0/windows/window_000610_20230101_021000",
+      "start_time": "2023-01-01T02:10:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000712_20230101_035200",
+      "path": "training/v0/windows/window_000712_20230101_035200",
+      "start_time": "2023-01-01T03:52:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000814_20230101_053400",
+      "path": "training/v0/windows/window_000814_20230101_053400",
+      "start_time": "2023-01-01T05:34:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_000915_20230101_071500",
+      "path": "training/v0/windows/window_000915_20230101_071500",
+      "start_time": "2023-01-01T07:15:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001017_20230101_085700",
+      "path": "training/v0/windows/window_001017_20230101_085700",
+      "start_time": "2023-01-01T08:57:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001119_20230101_103900",
+      "path": "training/v0/windows/window_001119_20230101_103900",
+      "start_time": "2023-01-01T10:39:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001221_20230101_122100",
+      "path": "training/v0/windows/window_001221_20230101_122100",
+      "start_time": "2023-01-01T12:21:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001322_20230101_140200",
+      "path": "training/v0/windows/window_001322_20230101_140200",
+      "start_time": "2023-01-01T14:02:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001424_20230101_154400",
+      "path": "training/v0/windows/window_001424_20230101_154400",
+      "start_time": "2023-01-01T15:44:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001526_20230101_172600",
+      "path": "training/v0/windows/window_001526_20230101_172600",
+      "start_time": "2023-01-01T17:26:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001628_20230101_190800",
+      "path": "training/v0/windows/window_001628_20230101_190800",
+      "start_time": "2023-01-01T19:08:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001729_20230101_204900",
+      "path": "training/v0/windows/window_001729_20230101_204900",
+      "start_time": "2023-01-01T20:49:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001831_20230101_223100",
+      "path": "training/v0/windows/window_001831_20230101_223100",
+      "start_time": "2023-01-01T22:31:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_001933_20230102_001300",
+      "path": "training/v0/windows/window_001933_20230102_001300",
+      "start_time": "2023-01-02T00:13:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002035_20230102_015500",
+      "path": "training/v0/windows/window_002035_20230102_015500",
+      "start_time": "2023-01-02T01:55:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002136_20230102_033600",
+      "path": "training/v0/windows/window_002136_20230102_033600",
+      "start_time": "2023-01-02T03:36:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002238_20230102_051800",
+      "path": "training/v0/windows/window_002238_20230102_051800",
+      "start_time": "2023-01-02T05:18:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002340_20230102_070000",
+      "path": "training/v0/windows/window_002340_20230102_070000",
+      "start_time": "2023-01-02T07:00:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002442_20230102_084200",
+      "path": "training/v0/windows/window_002442_20230102_084200",
+      "start_time": "2023-01-02T08:42:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002543_20230102_102300",
+      "path": "training/v0/windows/window_002543_20230102_102300",
+      "start_time": "2023-01-02T10:23:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002645_20230102_120500",
+      "path": "training/v0/windows/window_002645_20230102_120500",
+      "start_time": "2023-01-02T12:05:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002747_20230102_134700",
+      "path": "training/v0/windows/window_002747_20230102_134700",
+      "start_time": "2023-01-02T13:47:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002849_20230102_152900",
+      "path": "training/v0/windows/window_002849_20230102_152900",
+      "start_time": "2023-01-02T15:29:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_002950_20230102_171000",
+      "path": "training/v0/windows/window_002950_20230102_171000",
+      "start_time": "2023-01-02T17:10:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003052_20230102_185200",
+      "path": "training/v0/windows/window_003052_20230102_185200",
+      "start_time": "2023-01-02T18:52:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003154_20230102_203400",
+      "path": "training/v0/windows/window_003154_20230102_203400",
+      "start_time": "2023-01-02T20:34:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003256_20230102_221600",
+      "path": "training/v0/windows/window_003256_20230102_221600",
+      "start_time": "2023-01-02T22:16:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003358_20230102_235800",
+      "path": "training/v0/windows/window_003358_20230102_235800",
+      "start_time": "2023-01-02T23:58:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003459_20230103_013900",
+      "path": "training/v0/windows/window_003459_20230103_013900",
+      "start_time": "2023-01-03T01:39:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003561_20230103_032100",
+      "path": "training/v0/windows/window_003561_20230103_032100",
+      "start_time": "2023-01-03T03:21:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003663_20230103_050300",
+      "path": "training/v0/windows/window_003663_20230103_050300",
+      "start_time": "2023-01-03T05:03:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003765_20230103_064500",
+      "path": "training/v0/windows/window_003765_20230103_064500",
+      "start_time": "2023-01-03T06:45:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003866_20230103_082600",
+      "path": "training/v0/windows/window_003866_20230103_082600",
+      "start_time": "2023-01-03T08:26:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_003968_20230103_100800",
+      "path": "training/v0/windows/window_003968_20230103_100800",
+      "start_time": "2023-01-03T10:08:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004070_20230103_115000",
+      "path": "training/v0/windows/window_004070_20230103_115000",
+      "start_time": "2023-01-03T11:50:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004172_20230103_133200",
+      "path": "training/v0/windows/window_004172_20230103_133200",
+      "start_time": "2023-01-03T13:32:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004273_20230103_151300",
+      "path": "training/v0/windows/window_004273_20230103_151300",
+      "start_time": "2023-01-03T15:13:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004375_20230103_165500",
+      "path": "training/v0/windows/window_004375_20230103_165500",
+      "start_time": "2023-01-03T16:55:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004477_20230103_183700",
+      "path": "training/v0/windows/window_004477_20230103_183700",
+      "start_time": "2023-01-03T18:37:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004579_20230103_201900",
+      "path": "training/v0/windows/window_004579_20230103_201900",
+      "start_time": "2023-01-03T20:19:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004680_20230103_220000",
+      "path": "training/v0/windows/window_004680_20230103_220000",
+      "start_time": "2023-01-03T22:00:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004782_20230103_234200",
+      "path": "training/v0/windows/window_004782_20230103_234200",
+      "start_time": "2023-01-03T23:42:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004884_20230104_012400",
+      "path": "training/v0/windows/window_004884_20230104_012400",
+      "start_time": "2023-01-04T01:24:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_004986_20230104_030600",
+      "path": "training/v0/windows/window_004986_20230104_030600",
+      "start_time": "2023-01-04T03:06:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005087_20230104_044700",
+      "path": "training/v0/windows/window_005087_20230104_044700",
+      "start_time": "2023-01-04T04:47:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005189_20230104_062900",
+      "path": "training/v0/windows/window_005189_20230104_062900",
+      "start_time": "2023-01-04T06:29:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005291_20230104_081100",
+      "path": "training/v0/windows/window_005291_20230104_081100",
+      "start_time": "2023-01-04T08:11:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005393_20230104_095300",
+      "path": "training/v0/windows/window_005393_20230104_095300",
+      "start_time": "2023-01-04T09:53:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005494_20230104_113400",
+      "path": "training/v0/windows/window_005494_20230104_113400",
+      "start_time": "2023-01-04T11:34:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005596_20230104_131600",
+      "path": "training/v0/windows/window_005596_20230104_131600",
+      "start_time": "2023-01-04T13:16:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005698_20230104_145800",
+      "path": "training/v0/windows/window_005698_20230104_145800",
+      "start_time": "2023-01-04T14:58:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005800_20230104_164000",
+      "path": "training/v0/windows/window_005800_20230104_164000",
+      "start_time": "2023-01-04T16:40:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_005901_20230104_182100",
+      "path": "training/v0/windows/window_005901_20230104_182100",
+      "start_time": "2023-01-04T18:21:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006003_20230104_200300",
+      "path": "training/v0/windows/window_006003_20230104_200300",
+      "start_time": "2023-01-04T20:03:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006105_20230104_214500",
+      "path": "training/v0/windows/window_006105_20230104_214500",
+      "start_time": "2023-01-04T21:45:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006207_20230104_232700",
+      "path": "training/v0/windows/window_006207_20230104_232700",
+      "start_time": "2023-01-04T23:27:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006308_20230105_010800",
+      "path": "training/v0/windows/window_006308_20230105_010800",
+      "start_time": "2023-01-05T01:08:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006410_20230105_025000",
+      "path": "training/v0/windows/window_006410_20230105_025000",
+      "start_time": "2023-01-05T02:50:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006512_20230105_043200",
+      "path": "training/v0/windows/window_006512_20230105_043200",
+      "start_time": "2023-01-05T04:32:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006614_20230105_061400",
+      "path": "training/v0/windows/window_006614_20230105_061400",
+      "start_time": "2023-01-05T06:14:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006716_20230105_075600",
+      "path": "training/v0/windows/window_006716_20230105_075600",
+      "start_time": "2023-01-05T07:56:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006817_20230105_093700",
+      "path": "training/v0/windows/window_006817_20230105_093700",
+      "start_time": "2023-01-05T09:37:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_006919_20230105_111900",
+      "path": "training/v0/windows/window_006919_20230105_111900",
+      "start_time": "2023-01-05T11:19:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007021_20230105_130100",
+      "path": "training/v0/windows/window_007021_20230105_130100",
+      "start_time": "2023-01-05T13:01:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007123_20230105_144300",
+      "path": "training/v0/windows/window_007123_20230105_144300",
+      "start_time": "2023-01-05T14:43:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007224_20230105_162400",
+      "path": "training/v0/windows/window_007224_20230105_162400",
+      "start_time": "2023-01-05T16:24:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007326_20230105_180600",
+      "path": "training/v0/windows/window_007326_20230105_180600",
+      "start_time": "2023-01-05T18:06:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007428_20230105_194800",
+      "path": "training/v0/windows/window_007428_20230105_194800",
+      "start_time": "2023-01-05T19:48:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007530_20230105_213000",
+      "path": "training/v0/windows/window_007530_20230105_213000",
+      "start_time": "2023-01-05T21:30:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007631_20230105_231100",
+      "path": "training/v0/windows/window_007631_20230105_231100",
+      "start_time": "2023-01-05T23:11:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007733_20230106_005300",
+      "path": "training/v0/windows/window_007733_20230106_005300",
+      "start_time": "2023-01-06T00:53:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007835_20230106_023500",
+      "path": "training/v0/windows/window_007835_20230106_023500",
+      "start_time": "2023-01-06T02:35:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_007937_20230106_041700",
+      "path": "training/v0/windows/window_007937_20230106_041700",
+      "start_time": "2023-01-06T04:17:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008038_20230106_055800",
+      "path": "training/v0/windows/window_008038_20230106_055800",
+      "start_time": "2023-01-06T05:58:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008140_20230106_074000",
+      "path": "training/v0/windows/window_008140_20230106_074000",
+      "start_time": "2023-01-06T07:40:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008242_20230106_092200",
+      "path": "training/v0/windows/window_008242_20230106_092200",
+      "start_time": "2023-01-06T09:22:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008344_20230106_110400",
+      "path": "training/v0/windows/window_008344_20230106_110400",
+      "start_time": "2023-01-06T11:04:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008445_20230106_124500",
+      "path": "training/v0/windows/window_008445_20230106_124500",
+      "start_time": "2023-01-06T12:45:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008547_20230106_142700",
+      "path": "training/v0/windows/window_008547_20230106_142700",
+      "start_time": "2023-01-06T14:27:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008649_20230106_160900",
+      "path": "training/v0/windows/window_008649_20230106_160900",
+      "start_time": "2023-01-06T16:09:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008751_20230106_175100",
+      "path": "training/v0/windows/window_008751_20230106_175100",
+      "start_time": "2023-01-06T17:51:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008852_20230106_193200",
+      "path": "training/v0/windows/window_008852_20230106_193200",
+      "start_time": "2023-01-06T19:32:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_008954_20230106_211400",
+      "path": "training/v0/windows/window_008954_20230106_211400",
+      "start_time": "2023-01-06T21:14:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009056_20230106_225600",
+      "path": "training/v0/windows/window_009056_20230106_225600",
+      "start_time": "2023-01-06T22:56:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009158_20230107_003800",
+      "path": "training/v0/windows/window_009158_20230107_003800",
+      "start_time": "2023-01-07T00:38:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009259_20230107_021900",
+      "path": "training/v0/windows/window_009259_20230107_021900",
+      "start_time": "2023-01-07T02:19:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009361_20230107_040100",
+      "path": "training/v0/windows/window_009361_20230107_040100",
+      "start_time": "2023-01-07T04:01:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009463_20230107_054300",
+      "path": "training/v0/windows/window_009463_20230107_054300",
+      "start_time": "2023-01-07T05:43:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009565_20230107_072500",
+      "path": "training/v0/windows/window_009565_20230107_072500",
+      "start_time": "2023-01-07T07:25:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009666_20230107_090600",
+      "path": "training/v0/windows/window_009666_20230107_090600",
+      "start_time": "2023-01-07T09:06:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009768_20230107_104800",
+      "path": "training/v0/windows/window_009768_20230107_104800",
+      "start_time": "2023-01-07T10:48:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009870_20230107_123000",
+      "path": "training/v0/windows/window_009870_20230107_123000",
+      "start_time": "2023-01-07T12:30:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_009972_20230107_141200",
+      "path": "training/v0/windows/window_009972_20230107_141200",
+      "start_time": "2023-01-07T14:12:00",
+      "completeness": 1.0
+    },
+    {
+      "window_id": "window_010074_20230107_155400",
+      "path": "training/v0/windows/window_010074_20230107_155400",
+      "start_time": "2023-01-07T15:54:00",
+      "completeness": 1.0
+    }
+  ],
+  "metadata": {
+    "creation_time": "2025-10-04T19:54:29.464329",
+    "total_available_windows": 100,
+    "samples_taken": 100,
+    "sampling_method": "evenly_distributed"
+  }
+}

@@ -726,9 +726,12 @@ class Phase1Orchestrator:
         Build self-calibrated DQ baseline for threshold-free checks.
         Returns a small dict saved as a separate artifact.
         Keys:
-        - cadence_sec, ts_resolution_sec
+        - cadence_sec: Detected measurement interval (seconds)
+        - ts_resolution_sec: Timestamp precision (seconds)
         - prb_pct_decimals: {'RRU.PrbTotDl': int, 'RRU.PrbTotUl': int}
         - energy_power_band: {'ratio_q1': float, 'ratio_q3': float, 'n': int}
+        - ue_cell_thp_ratio: {'dl': {q25, q50, q75, n}, 'ul': {q25, q50, q75, n}}
+        - ue_cell_prb_ratio: {'dl': {q25, q50, q75, n}, 'ul': {q25, q50, q75, n}} 
         """
         dq: Dict[str, Any] = {}
 
@@ -828,10 +831,100 @@ class Phase1Orchestrator:
                 ratio = ratio.dropna()
 
         if not ratio.empty and len(ratio) >= 30:
-            q1, q3 = np.quantile(ratio, [0.25, 0.75])
+            q1, q3 = np.quantile(ratio, [0.10, 0.90])
             dq['energy_power_band'] = {'ratio_q1': float(q1), 'ratio_q3': float(q3), 'n': int(ratio.size)}
         else:
             dq['energy_power_band'] = {'ratio_q1': None, 'ratio_q3': None, 'n': int(ratio.size if not ratio.empty else 0)}
+        
+        # --- 4) UE–Cell throughput ratio bands ---
+        dq['ue_cell_thp_ratio'] = None  
+
+        thp_dl = 'DRB.UEThpDl'
+        thp_ul = 'DRB.UEThpUl'
+        need_cell = {ts_col, thp_dl, thp_ul}.issubset(cell_data.columns)
+        need_ue   = {ts_col, thp_dl, thp_ul}.issubset(ue_data.columns)
+
+        if not (need_cell and need_ue):
+            self.logger.info("Reconciliation bands: missing throughput cols; skipping.")
+        else:
+            c = cell_data[[ts_col, thp_dl, thp_ul]].copy()
+            u = ue_data[[ts_col, thp_dl, thp_ul]].copy()
+            c[ts_col] = pd.to_datetime(c[ts_col], errors='coerce'); c = c.dropna(subset=[ts_col])
+            u[ts_col] = pd.to_datetime(u[ts_col], errors='coerce'); u = u.dropna(subset=[ts_col])
+
+            cg = c.groupby(ts_col, as_index=True).agg({thp_dl:'sum', thp_ul:'sum'}).rename(
+                columns={thp_dl:'cell_dl', thp_ul:'cell_ul'}
+            )
+            ug = u.groupby(ts_col, as_index=True).agg({thp_dl:'sum', thp_ul:'sum'}).rename(
+                columns={thp_dl:'ue_dl', thp_ul:'ue_ul'}
+            )
+            g = cg.join(ug, how='inner')
+
+            # positive denominators only
+            g = g[(g['cell_dl'] > 0) | (g['cell_ul'] > 0)]
+            if g.empty:
+                self.logger.info("Reconciliation bands: no overlapping ts with positive denominators.")
+            else:
+                ratio_dl = (g.loc[g['cell_dl'] > 0, 'ue_dl'] / g.loc[g['cell_dl'] > 0, 'cell_dl']).replace([np.inf, -np.inf], np.nan).dropna()
+                ratio_ul = (g.loc[g['cell_ul'] > 0, 'ue_ul'] / g.loc[g['cell_ul'] > 0, 'cell_ul']).replace([np.inf, -np.inf], np.nan).dropna()
+
+                min_n = int(getattr(self, 'reconciliation_min_samples', 30))  # make config-driven if you want
+                def iqr_band(s: pd.Series):
+                    if s.size < min_n: return None
+                    q25, q50, q75 = np.percentile(s, [10, 50, 90])
+                    return {'q25': float(q25), 'q50': float(q50), 'q75': float(q75), 'n': int(s.size)}
+
+                dl_band = iqr_band(ratio_dl)
+                ul_band = iqr_band(ratio_ul)
+                if dl_band or ul_band:
+                    dq['ue_cell_thp_ratio'] = {'dl': dl_band, 'ul': ul_band}
+                else:
+                    self.logger.info(f"Reconciliation bands: insufficient samples (DL={ratio_dl.size}, UL={ratio_ul.size}, need {min_n})")
+
+        # --- 5) UE–Cell PRB used ratio bands ---
+        dq['ue_cell_prb_ratio'] = None  
+
+        prb_dl = 'RRU.PrbUsedDl'
+        prb_ul = 'RRU.PrbUsedUl'
+        need_cell = {ts_col, prb_dl, prb_ul}.issubset(cell_data.columns)
+        need_ue   = {ts_col, prb_dl, prb_ul}.issubset(ue_data.columns)
+
+        if not (need_cell and need_ue):
+            self.logger.info("PRB reconciliation: missing PRB columns; skipping.")
+        else:
+            c = cell_data[[ts_col, prb_dl, prb_ul]].copy()
+            u = ue_data[[ts_col, prb_dl, prb_ul]].copy()
+            c[ts_col] = pd.to_datetime(c[ts_col], errors='coerce'); c = c.dropna(subset=[ts_col])
+            u[ts_col] = pd.to_datetime(u[ts_col], errors='coerce'); u = u.dropna(subset=[ts_col])
+
+            cg = c.groupby(ts_col, as_index=True).agg({prb_dl:'sum', prb_ul:'sum'}).rename(
+            columns={prb_dl:'cell_dl', prb_ul:'cell_ul'}
+            )
+            ug = u.groupby(ts_col, as_index=True).agg({prb_dl:'sum', prb_ul:'sum'}).rename(
+            columns={prb_dl:'ue_dl', prb_ul:'ue_ul'}
+            )
+            g = cg.join(ug, how='inner')
+
+            # positive denominators only
+            g = g[(g['cell_dl'] > 0) | (g['cell_ul'] > 0)]
+            if g.empty:
+                self.logger.info("PRB reconciliation: no overlapping ts with positive denominators.")
+            else:
+                ratio_dl = (g.loc[g['cell_dl'] > 0, 'ue_dl'] / g.loc[g['cell_dl'] > 0, 'cell_dl']).replace([np.inf,-np.inf], np.nan).dropna()
+                ratio_ul = (g.loc[g['cell_ul'] > 0, 'ue_ul'] / g.loc[g['cell_ul'] > 0, 'cell_ul']).replace([np.inf,-np.inf], np.nan).dropna()
+
+                min_n = int(getattr(self, 'reconciliation_min_samples', 30))
+                def iqr_band(s: pd.Series):
+                    if s.size < min_n: return None
+                    q25, q50, q75 = np.percentile(s, [10, 50, 90])
+                    return {'q25': float(q25), 'q50': float(q50), 'q75': float(q75), 'n': int(s.size)}
+
+                dl_band = iqr_band(ratio_dl)
+                ul_band = iqr_band(ratio_ul)
+                if dl_band or ul_band:
+                    dq['ue_cell_prb_ratio'] = {'dl': dl_band, 'ul': ul_band}
+                else:
+                    self.logger.info(f"PRB reconciliation: insufficient samples (<{min_n}).")                    
 
         # Metadata
         dq['metadata'] = {

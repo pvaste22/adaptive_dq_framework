@@ -254,3 +254,8 @@ NEAR_ZERO_THRESHOLDS = {
     'power_watts': 0.1,        # < 0.1 W considered ~0
     'connections': 0           # Exactly 0 (no approximation)
 }
+
+RECONCILIATION_CONFIG = {
+    'min_samples': 30,
+    'description': 'Minimum samples needed for UE-cell throughput ratio bands'
+}
