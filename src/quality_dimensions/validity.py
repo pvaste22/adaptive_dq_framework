@@ -115,6 +115,15 @@ class ValidityDimension(BaseDimension):
 
     # ---------- Helpers ----------
 
+    def _has_range_in_baseline(self, field: str) -> bool:
+        for sec in ('cell_metrics','ue_metrics'):
+            secmap = self.field_ranges.get(sec, {}) or {}
+            if field in secmap:
+                lo, hi = secmap[field].get('min'), secmap[field].get('max')
+                if lo is not None and hi is not None:
+                    return True
+        return False
+
     def _v1_types_parsability(self, cell: pd.DataFrame, ue: pd.DataFrame) -> Tuple[pd.Series, Dict]:
         """
         Rule: numeric fields should be numeric (strings like 'abc' fail),
@@ -259,14 +268,6 @@ class ValidityDimension(BaseDimension):
                 }
 
         # PRB% in [0,100] if present (kept here as a “business constraint”)
-        def _has_range_in_baseline(self, field: str) -> bool:
-            for sec in ('cell_metrics','ue_metrics'):
-                secmap = self.field_ranges.get(sec, {}) or {}
-                if field in secmap:
-                    lo, hi = secmap[field].get('min'), secmap[field].get('max')
-                    if lo is not None and hi is not None:
-                        return True
-            return False
         for pct in ('RRU.PrbTotDl','RRU.PrbTotUl'):
             if pct in cell.columns and not self._has_range_in_baseline(pct):
                 p = pd.to_numeric(cell[pct], errors='coerce')
