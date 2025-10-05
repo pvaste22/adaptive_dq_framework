@@ -52,9 +52,14 @@ class ConsistencyDimension(BaseDimension):
         #CS3: prb reconciliation
         cs3p_tuple, cs3p_details = self._cs3_prb_reconciliation(cell, ue)
 
+        tuples_all = [cs2_tuple, cs3t_tuple, cs3p_tuple]
+        active_tuples = [t for t in tuples_all if (t[1] > 0)]
+        series_all = [cs1_series]
+        active_series = [s for s in series_all if s.notna().any()]
+
         apr, mpr, coverage, fails = self._apr_mpr(
-            check_series_list=[cs1_series],
-            check_tuples_list=[cs2_tuple, cs3t_tuple, cs3p_tuple]
+            check_series_list=active_series,
+            check_tuples_list=active_tuples
         )
         self.logger.info(f"Consistency: cs2 ={cs2_details}, cs3 thp={cs3t_details}, cs3 prb={cs3p_details}")
         return {
