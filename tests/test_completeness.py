@@ -20,7 +20,7 @@ val = ValidityDimension()
 # Load window
 window_data = comp.load_window_from_disk(window_path)
 
-"""# Score it
+# Score it
 result = comp.calculate_score(window_data)
 
 print(f"Score: {result['score']:.3f}")
@@ -46,7 +46,7 @@ print(f"Score: {con_res['score']:.3f}")
 print(f"APR: {con_res['apr']:.3f}")
 print(f"MPR: {con_res['score']:.3f}")
 print(f"Coverage: {con_res['coverage']:.3f}")
-print(f"Fails: {con_res['details']['fail_counts']}")"""
+print(f"Fails: {con_res['details']['fail_counts']}")
 
 val_res = val.calculate_score(window_data)
 
