@@ -20,6 +20,7 @@ class ValidityDimension(BaseDimension):
         self.field_ranges = self.load_artifact_baseline('field_ranges') or {}
         dq = self.get_dq_baseline() or {}
         self.prb_pct_decimals = dq.get('prb_pct_decimals', None)
+        self.prb_rule_slack   = dq.get("prb_rule_slack_prb") or {}
 
         # Column names (config-first)
         self.ts_col   = COLUMN_NAMES.get('timestamp', 'timestamp')
@@ -92,13 +93,17 @@ class ValidityDimension(BaseDimension):
         v5_series, v5_details = self._v5_prb_percent_identity(cell) 
 
         series_all = [v1_series, v2_series, v3_series, v4_series, v5_series]
-        active = [s for s in series_all if s.notna().any()]
-
-        apr, mpr, coverage, fails = self._apr_mpr(
-            check_series_list=active,
-            check_tuples_list=[]  # no aggregate checks in validity for now
+        active = [s for s in series_all if (s is not None and s.size > 0 and s.notna().any())]
+        combined = (
+            pd.concat(active, axis=0, ignore_index=True).astype('float')
+            if active else pd.Series([], dtype='float')
         )
 
+        apr, mpr, coverage, fails = self._apr_mpr(
+            check_series_list=[combined],
+            check_tuples_list=[]  # no aggregate checks in validity for now
+        )
+        self.logger.info(f"validity: v4 details = {v4_details}")
         return {
             'score': mpr,
             'apr': apr,
@@ -107,7 +112,7 @@ class ValidityDimension(BaseDimension):
                 'V1_types_parsability': v1_details,
                 'V2_ranges': v2_details,
                 'V3_prb_usage': v3_details,
-                'V4_biz_rules': v4_details,
+                'V4_business_rules': v4_details,
                 'V5_prb_percent_identity': v5_details,
                 'fail_counts': fails
             }
@@ -123,137 +128,255 @@ class ValidityDimension(BaseDimension):
                 if lo is not None and hi is not None:
                     return True
         return False
+    
+    def _rowwise_all(self, df: pd.DataFrame, passes: Dict[str, pd.Series]) -> pd.Series:
+        """
+        Combine many per-field boolean series into one per-row series:
+          - Treat missing for a field as NA (not applicable)
+          - Row passes if ALL applicable fields pass
+          - Row is NA if NO field is applicable
+        'passes' dict: {col_name: bool_series_with_NA}
+        """
+        if df is None or df.empty or not passes:
+            return pd.Series([], dtype='float')
+
+        # align, ensure boolean with NA
+        aligned = []
+        present_masks = []
+        for key, val in passes.items():
+            s = val[0] if isinstance(val, tuple) else val
+            if not isinstance(s, pd.Series):
+                continue
+            # ensure boolean-with-NA semantics preserved
+            s = s.reindex(df.index)
+            # boolean OK / FAIL, NA where not applicable
+            aligned.append(s)
+            present_masks.append(s.notna())
+        if not aligned:
+            return pd.Series([], dtype='float')
+
+        # any field present on the row?
+        any_present = pd.concat(present_masks, axis=1).any(axis=1)
+
+        # AND across fields, treating NA as True (so it doesn't fail the row)
+        filled = [s.fillna(True) for s in aligned]
+        row_ok = pd.concat(filled, axis=1).all(axis=1)
+
+        out = pd.Series(np.nan, index=df.index, dtype='float')
+        out.loc[any_present] = row_ok.loc[any_present].astype('float')
+        return out
+
+    def _slack_prb_series(self, rule: str, side: str, avail: pd.Series, pct_col: str) -> pd.Series:
+        """
+        Per-row PRB slack for V4 inequalities.
+        rule ∈ {"tot_le_avail","used_le_tot"}
+        side ∈ {"Dl","Ul"}
+        Uses baseline:
+        - learned fixed slack (integer PRBs) from dq_baseline['prb_rule_slack_prb']
+        - decimals d from dq_baseline['prb_pct_decimals'] for pct_col
+        Returns: Series aligned to avail.index with slack in PRBs (float).
+        """
+        idx = avail.index
+
+        # 0) config cap (default 3)
+        cap = int(getattr(self, 'prb_rule_slack_cap_prb', 3))
+
+        # 1) learned fixed slack
+        learned_val = 0
+        if isinstance(self.prb_rule_slack, dict):
+            key = 'dl' if side.lower() == 'dl' else 'ul'
+            try:
+                v = self.prb_rule_slack.get(rule, {}).get(key, None)
+                if v is not None:
+                    learned_val = int(max(0, min(int(v), cap)))
+            except Exception:
+                learned_val = 0
+
+        learned = pd.Series(float(learned_val), index=idx, dtype='float')
+
+        # 2) decimals-derived slack from baseline d (half ULP in % mapped to PRBs)
+        d = 2
+        if isinstance(self.prb_pct_decimals, dict):
+            d = int(self.prb_pct_decimals.get(pct_col, self.prb_pct_decimals.get(side.lower(), 2)))
+        tol_pct = 0.5 * (10.0 ** (-d))                         # half ULP at d decimals
+        avail_num = pd.to_numeric(avail, errors='coerce')
+        dec_slack = np.ceil((tol_pct / 100.0) * avail_num).astype('float')  # PRBs
+        # ensure at least 1 PRB when applicable; then cap
+        dec_slack = dec_slack.clip(lower=1.0, upper=float(cap)).fillna(1.0)
+
+        # 3) hybrid: max(learned_fixed, decimals_derived)
+        slack = np.fmax(learned.values, dec_slack.values)
+        return pd.Series(slack, index=idx, dtype='float')
+
 
     def _v1_types_parsability(self, cell: pd.DataFrame, ue: pd.DataFrame) -> Tuple[pd.Series, Dict]:
-        """
-        Rule: numeric fields should be numeric (strings like 'abc' fail),
-        but missing values are NA (not counted here; Completeness handles nulls).
-        """
-        checks: List[pd.Series] = []
-        det: Dict = {}
+        # CELL
+        cell_pass = {}
+        if not cell.empty:
+            for col in self.numeric_cell:
+                if col in cell.columns:
+                    x = pd.to_numeric(cell[col], errors='coerce')
+                    # pass if numeric; NA for missing raw values
+                    ok = x.notna().astype('float')
+                    ok[~cell[col].notna()] = np.nan
+                    cell_pass[col] = ok
 
-        def series_for(df: pd.DataFrame, cols: List[str], tag: str):
-            if df.empty: return
-            for col in cols:
-                if col in df.columns:
-                    s_num = pd.to_numeric(df[col], errors='coerce')  # invalid → NaN
-                    # Pass if value is numeric OR is NaN (NA not counted)
-                    ok = s_num.notna()
-                    ok = ok.astype('float')
-                    ok[~df[col].notna()] = np.nan  # pure missing → NA
-                    checks.append(ok)
-                    det[f'parsable_{tag}_{col}'] = {
-                        'applicable': int(ok.notna().sum()),
-                        'passed':     int((ok == 1.0).sum())
-                    }
+        s_cell = self._rowwise_all(cell, cell_pass) if cell_pass else pd.Series([], dtype='float')
 
-        series_for(cell, self.numeric_cell, 'cell')
-        series_for(ue,   self.numeric_ue,   'ue')
+        # UE
+        ue_pass = {}
+        if not ue.empty:
+            for col in self.numeric_ue:
+                if col in ue.columns:
+                    x = pd.to_numeric(ue[col], errors='coerce')
+                    ok = x.notna().astype('float')
+                    ok[~ue[col].notna()] = np.nan
+                    ue_pass[col] = ok
 
-        series = pd.concat(checks, axis=0, ignore_index=True).astype('float') if checks else pd.Series([], dtype='float')
-        return series, {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
+        s_ue = self._rowwise_all(ue, ue_pass) if ue_pass else pd.Series([], dtype='float')
+
+        # one series for the component = stack cell+ue row series
+        series = (pd.concat([s_cell, s_ue], axis=0, ignore_index=True).astype('float')
+                if (s_cell.size or s_ue.size) else pd.Series([], dtype='float'))
+
+        details = {
+            'applicable': int(series.notna().sum()),
+            'passed':     int((series == 1.0).sum()),
+            'cell_rows':  int(s_cell.notna().sum()) if s_cell.size else 0,
+            'ue_rows':    int(s_ue.notna().sum()) if s_ue.size else 0,
+        }
+        return series, details
+
 
     def _v2_ranges(self, cell: pd.DataFrame, ue: pd.DataFrame) -> Tuple[pd.Series, Dict]:
-        """
-        Rule: each numeric field lies within an allowed range.
-        Priority: field_ranges (train) -> fallback_ranges -> skip.
-        """
-        checks: List[pd.Series] = []
-        det: Dict = {}
-
         def bounds_for(field: str):
-            # Try training ranges
             for sec in ('cell_metrics','ue_metrics'):
-                secmap = self.field_ranges.get(sec, {})
+                secmap = self.field_ranges.get(sec, {}) or {}
                 if field in secmap:
-                    lo = secmap[field].get('min')
-                    hi = secmap[field].get('max')
+                    lo, hi = secmap[field].get('min'), secmap[field].get('max')
                     if lo is not None and hi is not None:
                         return float(lo), float(hi)
-            # Fallback static
-            if field in self.fallback_ranges:
-                return self.fallback_ranges[field]
-            return None
+            return self.fallback_ranges.get(field, None)
 
-        def apply_ranges(df: pd.DataFrame, cols: List[str], tag: str):
-            if df.empty: return
-            for col in cols:
-                if col in df.columns:
+        # CELL
+        cell_pass = {}
+        if not cell.empty:
+            for col in self.numeric_cell:
+                if col in cell.columns:
                     b = bounds_for(col)
-                    if not b:  # no range known → skip
+                    if not b:
                         continue
                     lo, hi = b
-                    s = pd.to_numeric(df[col], errors='coerce')
-                    ok = s.ge(lo) & s.le(hi)
-                    ok = ok.astype('float')
+                    s = pd.to_numeric(cell[col], errors='coerce')
+                    ok = (s.ge(lo) & s.le(hi)).astype('float')
                     ok[s.isna()] = np.nan
-                    checks.append(ok)
-                    det[f'range_{tag}_{col}'] = {
-                        'lo': lo, 'hi': hi,
-                        'applicable': int(ok.notna().sum()),
-                        'passed':     int((ok == 1.0).sum())
-                    }
+                    cell_pass[col] = ok
 
-        apply_ranges(cell, self.numeric_cell, 'cell')
-        apply_ranges(ue,   self.numeric_ue,   'ue')
+        s_cell = self._rowwise_all(cell, cell_pass) if cell_pass else pd.Series([], dtype='float')
 
-        series = pd.concat(checks, axis=0, ignore_index=True).astype('float') if checks else pd.Series([], dtype='float')
-        return series, {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
+        # UE
+        ue_pass = {}
+        if not ue.empty:
+            for col in self.numeric_ue:
+                if col in ue.columns:
+                    b = bounds_for(col)
+                    if not b:
+                        continue
+                    lo, hi = b
+                    s = pd.to_numeric(ue[col], errors='coerce')
+                    ok = (s.ge(lo) & s.le(hi)).astype('float')
+                    ok[s.isna()] = np.nan
+                    ue_pass[col] = ok
+
+        s_ue = self._rowwise_all(ue, ue_pass) if ue_pass else pd.Series([], dtype='float')
+
+        series = (pd.concat([s_cell, s_ue], axis=0, ignore_index=True).astype('float')
+                if (s_cell.size or s_ue.size) else pd.Series([], dtype='float'))
+
+        details = {
+            'applicable': int(series.notna().sum()),
+            'passed':     int((series == 1.0).sum()),
+            'cell_rows':  int(s_cell.notna().sum()) if s_cell.size else 0,
+            'ue_rows':    int(s_ue.notna().sum()) if s_ue.size else 0,
+        }
+        return series, details
 
     def _v3_prb_usage_only(self, cell: pd.DataFrame):
-        checks = []; det = {}
         if cell.empty:
-            return pd.Series([], dtype='float'), det
+            return pd.Series([], dtype='float'), {}
 
-        pairs = [('RRU.PrbUsedDl','RRU.PrbAvailDl'), ('RRU.PrbUsedUl','RRU.PrbAvailUl')]
+        passes = {}
 
-        # Non-negative (only for Used/Avail)
+        # Non-negative Used/Avail
         for col in ['RRU.PrbUsedDl','RRU.PrbUsedUl','RRU.PrbAvailDl','RRU.PrbAvailUl']:
             if col in cell.columns:
                 x = pd.to_numeric(cell[col], errors='coerce')
                 ok = x.ge(0).astype('float'); ok[x.isna()] = np.nan
-                checks.append(ok)
-                det[f'nonneg_{col}'] = {'applicable': int(ok.notna().sum()), 'passed': int((ok==1.0).sum())}
+                passes[f'nonneg_{col}'] = ok
 
-        # Used ≤ Avail
-        for used, avail in pairs:
+        # Used ≤ Avail (DL, UL)
+        for used, avail in [('RRU.PrbUsedDl','RRU.PrbAvailDl'), ('RRU.PrbUsedUl','RRU.PrbAvailUl')]:
             if {used, avail}.issubset(cell.columns):
                 u = pd.to_numeric(cell[used],  errors='coerce')
                 a = pd.to_numeric(cell[avail], errors='coerce')
-                ok = u.le(a).astype('float'); ok[u.isna() | a.isna()] = np.nan
-                checks.append(ok)
-                det[f'used_le_avail_{used}'] = {'applicable': int(ok.notna().sum()), 'passed': int((ok==1.0).sum())}
+                ok = (u <= a * (1 + 1e-6)).astype('float')
+                ok[u.isna() | a.isna()] = np.nan   
+                passes[f'used_le_avail_{used}'] = ok
 
-        series = (pd.concat(checks, axis=0, ignore_index=True).astype('float')
-                if checks else pd.Series([], dtype='float'))
-        return series, det
+        series = self._rowwise_all(cell, passes) if passes else pd.Series([], dtype='float')
+        details = {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
+        return series, details
+
 
 
     def _v4_business_rules(self, cell: pd.DataFrame):
-        checks = []; det = {}
         if cell.empty:
-            return pd.Series([], dtype='float'), det
+            return pd.Series([], dtype='float'), {}
 
-        # If absolute totals present, enforce Avail ≤ Tot_abs and Used ≤ Tot_abs
+        passes = {}
+        eps = 1e-6
+
         for side in ('Dl','Ul'):
-            tot = f'RRU.PrbTot{side}_abs'
+            tot   = f'RRU.PrbTot{side}_abs'
             avail = f'RRU.PrbAvail{side}'
             used  = f'RRU.PrbUsed{side}'
-            if tot in cell.columns and avail in cell.columns:
-                t = pd.to_numeric(cell[tot], errors='coerce')
-                a = pd.to_numeric(cell[avail], errors='coerce')
-                ok = a.le(t).astype('float'); ok[t.isna() | a.isna()] = np.nan
-                checks.append(ok)
-                det[f'avail_le_tot_{side}'] = {'applicable': int(ok.notna().sum()), 'passed': int((ok==1.0).sum())}
-            if tot in cell.columns and used in cell.columns:
-                t = pd.to_numeric(cell[tot], errors='coerce')
-                u = pd.to_numeric(cell[used], errors='coerce')
-                ok = u.le(t).astype('float'); ok[t.isna() | u.isna()] = np.nan
-                checks.append(ok)
-                det[f'used_le_tot_{side}'] = {'applicable': int(ok.notna().sum()), 'passed': int((ok==1.0).sum())}
+            pct   = f'RRU.PrbTot{side}'
 
-        # If Avail == 0 ⇒ Used must be 0 (cells)
-        for used, avail in [('RRU.PrbUsedDl','RRU.PrbAvailDl'), ('RRU.PrbUsedUl','RRU.PrbAvailUl')]:
+            # build per-row slack from baseline (hybrid)
+            slack = None
+            if avail in cell.columns:
+                a_ser = pd.to_numeric(cell[avail], errors='coerce')
+                slack = self._slack_prb_series(rule='tot_le_avail', side=side, avail=a_ser, pct_col=pct)
+
+            # tot_abs ≤ avail (+ slack)
+            if {tot, avail}.issubset(cell.columns):
+                t = pd.to_numeric(cell[tot],   errors='coerce')
+                a = pd.to_numeric(cell[avail], errors='coerce')
+                if slack is None:
+                    slack = pd.Series(1.0, index=cell.index, dtype='float')
+                thresh = a + slack
+                ok = (t <= (thresh * (1 + eps))).astype('float')
+                ok[t.isna() | a.isna() | thresh.isna()] = np.nan
+                passes[f'tot_abs_le_avail_{side}'] = ok
+
+            # used ≤ tot_abs (+ slack)  — use the same hybrid idea (rule='used_le_tot')
+            if {tot, used}.issubset(cell.columns):
+                t = pd.to_numeric(cell[tot],  errors='coerce')
+                u = pd.to_numeric(cell[used], errors='coerce')
+                # if avail missing above, still compute dec-based slack from pct_col:
+                if slack is None and avail in cell.columns:
+                    a_ser = pd.to_numeric(cell[avail], errors='coerce')
+                if avail in cell.columns:
+                    slack_used = self._slack_prb_series(rule='used_le_tot', side=side, avail=a_ser, pct_col=pct)
+                else:
+                    slack_used = pd.Series(float(getattr(self, 'prb_rule_slack_cap_prb', 3)), index=cell.index, dtype='float')
+
+                thresh = t + slack_used
+                ok = (u <= (thresh * (1 + eps))).astype('float')
+                ok[t.isna() | u.isna() | thresh.isna()] = np.nan
+                passes[f'used_le_tot_abs_{side}'] = ok
+
+            # Avail == 0  =>  Used == 0
             if {used, avail}.issubset(cell.columns):
                 u = pd.to_numeric(cell[used],  errors='coerce')
                 a = pd.to_numeric(cell[avail], errors='coerce')
@@ -261,59 +384,79 @@ class ValidityDimension(BaseDimension):
                 s = pd.Series(np.nan, index=cell.index, dtype='float')
                 if cond.any():
                     s.loc[cond] = (u.loc[cond] == 0).astype('float')
-                checks.append(s)
-                det[f'avail0_implies_used0_{used}'] = {
-                    'applicable': int(cond.sum()),
-                    'passed':     int((s == 1.0).sum())
-                }
+                passes[f'avail0_implies_used0_{side}'] = s
 
-        # PRB% in [0,100] if present (kept here as a “business constraint”)
+        # PRB% bounds only if not already covered by field_ranges
         for pct in ('RRU.PrbTotDl','RRU.PrbTotUl'):
             if pct in cell.columns and not self._has_range_in_baseline(pct):
                 p = pd.to_numeric(cell[pct], errors='coerce')
-                ok = (p.ge(0.0) & p.le(100.0)).astype('float'); ok[p.isna()] = np.nan
-                checks.append(ok)
-                det[f'prb_pct_bounds_{pct}'] = {'applicable': int(ok.notna().sum()), 'passed': int((ok==1.0).sum())}
+                ok = (p.ge(0.0) & p.le(100.0)).astype('float')
+                ok[p.isna()] = np.nan
+                passes[f'prb_pct_bounds_{pct}'] = ok
 
-        series = (pd.concat(checks, axis=0, ignore_index=True).astype('float')
-                if checks else pd.Series([], dtype='float'))
-        return series, det
+        #self.logger.info(f"DEBUG: passes dictionary keys = {passes.keys()}")
+        #self.logger.info(f"DEBUG: passes dictionary = {passes}")
+        series = self._rowwise_all(cell, passes) if passes else pd.Series([], dtype='float')
+        details = {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
+        return series, details
 
 
     def _v5_prb_percent_identity(self, cell: pd.DataFrame) -> Tuple[pd.Series, Dict]:
         """
-        Row-wise identity using learned decimals:
-          round(Used/Avail*100, d_side) == round(PrbTot, d_side)
-        Only applies if decimals present and Avail>0.
+        Row-wise PRB % identity using learned decimals from dq_baseline:
+        If RRU.PrbTot{Dl,Ul}_abs is present:
+            pct_calc = (PrbTot_abs / PrbAvail) * 100
+            pass if |pct_calc - RRU.PrbTot%| <= 0.5 * 10^{-d} (+ tiny eps)
+        Decimals are stored keyed by percent column name in dq_baseline['prb_pct_decimals'].
+        If _abs is missing for a side, we skip that side (NA) instead of forcing a check.
         """
         details: Dict = {}
-        if cell.empty or self.prb_pct_decimals is None:
+        # require a decimals map
+        if cell.empty or not isinstance(self.prb_pct_decimals, dict):
             return pd.Series([], dtype='float'), {'note': 'no decimals baseline'}
 
-        checks: List[pd.Series] = []
+        checks: Dict[str, pd.Series] = {}
 
-        for side, used_col, avail_col, pct_col in [
-            ('dl', 'RRU.PrbUsedDl', 'RRU.PrbAvailDl', 'RRU.PrbTotDl'),
-            ('ul', 'RRU.PrbUsedUl', 'RRU.PrbAvailUl', 'RRU.PrbTotUl'),
+        for side, avail_col, pct_col in [
+            ('dl', 'RRU.PrbAvailDl', 'RRU.PrbTotDl'),
+            ('ul', 'RRU.PrbAvailUl', 'RRU.PrbTotUl'),
         ]:
-            if not {used_col, avail_col, pct_col}.issubset(cell.columns):
+            if not {avail_col, pct_col}.issubset(cell.columns):
                 continue
-            d = int(self.prb_pct_decimals.get(side, 2))
-            used  = pd.to_numeric(cell[used_col],  errors='coerce')
+
+            tot_abs_col = pct_col + '_abs'  # e.g., RRU.PrbTotDl_abs
+            # If absolute total not available, mark NA for this side (not applicable)
+            if tot_abs_col not in cell.columns:
+                checks[f'identity_{side}'] = pd.Series(np.nan, index=cell.index, dtype='float')
+                continue
+
             avail = pd.to_numeric(cell[avail_col], errors='coerce')
-            pct   = pd.to_numeric(cell[pct_col],   errors='coerce')
+            tot_abs = pd.to_numeric(cell[tot_abs_col], errors='coerce')
+            pct    = pd.to_numeric(cell[pct_col],   errors='coerce')
 
             s = pd.Series(np.nan, index=cell.index, dtype='float')
-            valid = used.notna() & avail.notna() & pct.notna() & (avail > 0)
+            valid = avail.notna() & tot_abs.notna() & pct.notna() & (avail > 0)
+
             if valid.any():
-                calc = (used / avail) * 100.0
-                ok = np.round(calc, d) == np.round(pct, d)
+                # decimals keyed by the percent column name
+                d = int(self.prb_pct_decimals.get(pct_col, 2))
+                tol = (10.0 ** (-d)) / 2.0 + 1e-9
+
+                calc = (tot_abs / avail) * 100.0
+                # clamp to sane range
+                calc = calc.clip(lower=0.0, upper=100.0)
+                tgt  = pct.clip(lower=0.0, upper=100.0)
+
+                ok = (calc.clip(0,100) - tgt.clip(0,100)).abs() <= tol  # keep Series (not ndarray)
                 s.loc[valid] = ok.loc[valid].astype('float')
 
-            checks.append(s)
+            checks[f'identity_{side}'] = s
 
-        series = (pd.concat(checks, axis=0, ignore_index=True).astype('float')
-                  if checks else pd.Series([], dtype='float'))
+        # Combine DL & UL identity per row (NA if neither side applicable)
+        series = self._rowwise_all(cell, checks) if checks else pd.Series([], dtype='float')
         details['applicable'] = int(series.notna().sum())
         details['passed']     = int((series == 1.0).sum())
+        
         return series, details
+
+      

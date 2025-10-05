@@ -140,17 +140,12 @@ class CompletenessDimension(BaseDimension):
         c2_tuple, c2_details = self._score_entity_presence(cell_data, ue_data)
         c3_tuple, c3_details = self._score_time_continuity(cell_data, ue_data)
         c4_tuple, c4_details = self._score_field_completeness(cell_data, ue_data)
+        row_checks = [c1_series]
+        agg_checks = [c2_tuple, c3_tuple, c4_tuple]
+        
         
         # Aggregate with base class method
-
-        tuples_all = [c2_tuple, c3_tuple, c4_tuple]
-        active_tuples = [t for t in tuples_all if (t[1] > 0)]
-        series_all = [c1_series]
-        active_series = [s for s in series_all if s.notna().any()]
-        apr, mpr, coverage, fails = self._apr_mpr(
-            check_series_list=active_series,
-            check_tuples_list= active_tuples
-        )
+        apr, mpr, coverage, fails = self._apr_mpr(check_series_list=row_checks,check_tuples_list=agg_checks)
 
         return {
             'score': mpr,

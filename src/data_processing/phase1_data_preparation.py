@@ -925,6 +925,52 @@ class Phase1Orchestrator:
                     dq['ue_cell_prb_ratio'] = {'dl': dl_band, 'ul': ul_band}
                 else:
                     self.logger.info(f"PRB reconciliation: insufficient samples (<{min_n}).")                    
+        def _learn_prb_rule_slack(df: pd.DataFrame, side: str) -> dict:
+            # column names
+            tot_abs = f"RRU.PrbTot{side}_abs"
+            avail   = f"RRU.PrbAvail{side}"
+            used    = f"RRU.PrbUsed{side}"
+
+            have = {tot_abs, avail, used}.issubset(df.columns)
+            if not have:
+                return {"tot_le_avail": None, "used_le_tot": None, "n": 0}
+
+            t  = pd.to_numeric(df[tot_abs], errors='coerce')
+            a  = pd.to_numeric(df[avail],   errors='coerce')
+            u  = pd.to_numeric(df[used],    errors='coerce')
+
+            # Residuals (positive parts only)
+            r1 = (t - a).clip(lower=0)            # should be <= 0 ideally
+            r2 = (u - t).clip(lower=0)            # should be <= 0 ideally
+
+            # Only count rows where both terms exist
+            r1 = r1[a.notna() & t.notna()]
+            r2 = r2[u.notna() & t.notna()]
+
+            # Require enough data to be reliable
+            min_n = 30
+            if (r1.size < min_n) or (r2.size < min_n):
+                return {"tot_le_avail": None, "used_le_tot": None, "n": int(min(r1.size, r2.size))}
+
+            # pick a robust small percentile (p95) and clamp to [0, 3] PRBs
+
+            slack1 = int(np.ceil(np.percentile(r1[r1 > 0], 95))) if (r1 > 0).any() else 0
+            slack2 = int(np.ceil(np.percentile(r2[r2 > 0], 95))) if (r2 > 0).any() else 0
+
+            # clamp tiny
+            slack1 = int(max(0, min(slack1, 3)))
+            slack2 = int(max(0, min(slack2, 3)))
+
+            return {"tot_le_avail": slack1, "used_le_tot": slack2, "n": int(min(r1.size, r2.size))}
+
+        # learn slacks for DL/UL and store in dq
+        slack_dl = _learn_prb_rule_slack(cell_data, "Dl")
+        slack_ul = _learn_prb_rule_slack(cell_data, "Ul")
+        dq["prb_rule_slack_prb"] = {
+            "tot_le_avail": {"dl": slack_dl["tot_le_avail"], "ul": slack_ul["tot_le_avail"]},
+            "used_le_tot":  {"dl": slack_dl["used_le_tot"],  "ul": slack_ul["used_le_tot"]},
+            "n":            {"dl": slack_dl["n"],            "ul": slack_ul["n"]}
+        }
 
         # Metadata
         dq['metadata'] = {

@@ -48,13 +48,9 @@ class TimelinessDimension(BaseDimension):
 
         self.logger.info(f"Timeliness initialized: T1 pass={t1_details['passed'] / t1_details['applicable']}, t3 pass={t3_details['passed'] / t3_details['applicable']}")
 
-        tuples_all = [t2_tuple]
-        active_tuples = [t for t in tuples_all if (t[1] > 0)]
-        series_all = [t1_series, t3_series]
-        active_series = [s for s in series_all if s.notna().any()]
         apr, mpr, coverage, fails = self._apr_mpr(
-            check_series_list=active_series,
-            check_tuples_list= active_tuples
+            check_series_list=[t1_series, t3_series],
+            check_tuples_list=[t2_tuple]
         )
 
         return {
