@@ -238,7 +238,7 @@ class CompletenessDimension(BaseDimension):
         ratio_ues   = (actual_ues / expected_ues) if expected_ues > 0 else 0.0
         covered_cells = min(actual_cells, int(expected_cells))
         covered_ues = min(actual_ues, int(expected_ues))
-        passed = int(actual_cells + actual_ues)
+        passed = int(covered_cells + covered_ues)
         total = int(expected_cells + expected_ues)
 
         details['actual_cells_avg'] = actual_cells

@@ -998,7 +998,7 @@ class Phase1Orchestrator:
             thp_gbps = pd.to_numeric(df[thp_col], errors='coerce')          # Gbps
             avail    = pd.to_numeric(df[avail_col], errors='coerce')         # PRBs
             denom_hz = (avail * per_prb_khz * 1e3)                          # per_prb_khz=180 → Hz
-            se = ((thp_gbps * 1e9) / denom_hz).replace([np.inf, -np.inf], np.nan).dropna()
+            se = ((thp_gbps * 1e9) / denom_hz.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).dropna()
             if se.size < 30: return None
             return float(np.percentile(se, 99))
 

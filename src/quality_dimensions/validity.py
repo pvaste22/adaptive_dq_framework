@@ -253,8 +253,13 @@ class ValidityDimension(BaseDimension):
             for sec in ('cell_metrics','ue_metrics'):
                 secmap = self.field_ranges.get(sec, {}) or {}
                 if field in secmap:
-                    lo, hi = secmap[field].get('min'), secmap[field].get('max')
+                    ent = secmap[field]
+                    lo = ent.get('p01', ent.get('min'))
+                    hi = ent.get('p99', ent.get('max'))
                     if lo is not None and hi is not None:
+                        lo = float(lo); hi = float(hi)
+                        if lo > hi:
+                            lo, hi = hi, lo
                         return float(lo), float(hi)
             return self.fallback_ranges.get(field, None)
 
