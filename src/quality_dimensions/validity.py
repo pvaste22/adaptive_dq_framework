@@ -21,6 +21,8 @@ class ValidityDimension(BaseDimension):
         dq = self.get_dq_baseline() or {}
         self.prb_pct_decimals = dq.get('prb_pct_decimals', None)
         self.prb_rule_slack   = dq.get("prb_rule_slack_prb") or {}
+        self.cadence_sec = float(dq.get('cadence_sec', 60.0))
+        self.ts_resolution_sec = float(dq.get('ts_resolution_sec', 1.0))
 
         # Column names (config-first)
         self.ts_col   = COLUMN_NAMES.get('timestamp', 'timestamp')
@@ -104,6 +106,8 @@ class ValidityDimension(BaseDimension):
             check_tuples_list=[]  # no aggregate checks in validity for now
         )
         self.logger.info(f"validity: v4 details = {v4_details}")
+        self.logger.info(f"[Validity] V1={v1_details} V2={v2_details} V3={v3_details} V4={v4_details} V5={v5_details}")
+
         return {
             'score': mpr,
             'apr': apr,
@@ -119,6 +123,55 @@ class ValidityDimension(BaseDimension):
         }
 
     # ---------- Helpers ----------
+
+    def _pad_bounds(self, field: str, lo: float, hi: float) -> tuple:
+    
+        if lo is None or hi is None: 
+            return lo, hi
+        if not np.isfinite(hi - lo) or (hi - lo) <= 0:
+            return lo, hi
+
+        span = hi - lo
+
+        # PRB fields: integer-ish -> ±1 PRB pad
+        if field in ('RRU.PrbUsedDl','RRU.PrbUsedUl','RRU.PrbAvailDl','RRU.PrbAvailUl'):
+            lo2 = max(0, np.floor(lo) - 1)
+            hi2 = np.ceil(hi) + 1
+            return float(lo2), float(hi2)
+
+        # RRC connection stats: integer counts -> ±1 pad
+        if field.startswith('RRC.Conn'):
+            lo2 = max(0, np.floor(lo) - 1)
+            hi2 = np.ceil(hi) + 1
+            return float(lo2), float(hi2)
+
+        # Energy interval: tie to cadence ± ts_resolution
+        if field == 'PEE.Energy_interval':
+            tol = max(1.0, float(self.ts_resolution_sec))
+            cad = float(self.cadence_sec)
+            return cad - tol, cad + tol
+
+        # Throughput in Gbps: multiplicative ~1% (min 1 Mbps = 0.001 Gbps)
+        if field.startswith('DRB.UEThp'):
+            pad = max(0.001, 0.01 * hi)
+            return max(0.0, lo - pad), hi + pad
+
+        # default: gentle ±1% span
+        pad = max(1e-9, 0.01 * span)
+        return lo - pad, hi + pad
+
+
+
+    def _log_topk(self, checks: Dict[str, pd.Series], tag: str, k: int = 5):
+        # count fails/applicable per field
+        fails = {name: int((s == 0.0).sum()) for name, s in checks.items() if isinstance(s, pd.Series)}
+        appl  = {name: int(s.notna().sum())  for name, s in checks.items() if isinstance(s, pd.Series)}
+        # top-k by fails
+        top = sorted(fails.items(), key=lambda x: x[1], reverse=True)[:k]
+        # pretty tuple: (field, fails, applicable)
+        top_pretty = [(f, fails[f], appl.get(f, 0)) for f, _ in top]
+        self.logger.info(f"[Validity][{tag}] top fails: {top_pretty}")
+
 
     def _has_range_in_baseline(self, field: str) -> bool:
         for sec in ('cell_metrics','ue_metrics'):
@@ -222,7 +275,7 @@ class ValidityDimension(BaseDimension):
                     cell_pass[col] = ok
 
         s_cell = self._rowwise_all(cell, cell_pass) if cell_pass else pd.Series([], dtype='float')
-
+        self._log_topk(cell_pass, 'V1-types-cell')
         # UE
         ue_pass = {}
         if not ue.empty:
@@ -235,6 +288,9 @@ class ValidityDimension(BaseDimension):
 
         s_ue = self._rowwise_all(ue, ue_pass) if ue_pass else pd.Series([], dtype='float')
 
+        
+        
+        self._log_topk(ue_pass, 'V1-types-ue')
         # one series for the component = stack cell+ue row series
         series = (pd.concat([s_cell, s_ue], axis=0, ignore_index=True).astype('float')
                 if (s_cell.size or s_ue.size) else pd.Series([], dtype='float'))
@@ -254,13 +310,17 @@ class ValidityDimension(BaseDimension):
                 secmap = self.field_ranges.get(sec, {}) or {}
                 if field in secmap:
                     ent = secmap[field]
-                    lo = ent.get('p01', ent.get('min'))
-                    hi = ent.get('p99', ent.get('max'))
-                    if lo is not None and hi is not None:
-                        lo = float(lo); hi = float(hi)
-                        if lo > hi:
-                            lo, hi = hi, lo
-                        return float(lo), float(hi)
+                    lo_raw = ent.get('p01', ent.get('min'))
+                    hi_raw = ent.get('p99', ent.get('max'))
+                    
+                    if lo_raw is not None and hi_raw is not None:
+                        continue
+                    
+                    lo = float(lo_raw); hi = float(hi_raw)
+                    lo, hi = self._pad_bounds(field, lo, hi)
+                    if lo > hi:
+                        lo, hi = hi, lo
+                    return lo, hi
             return self.fallback_ranges.get(field, None)
 
         # CELL
@@ -278,6 +338,7 @@ class ValidityDimension(BaseDimension):
                     cell_pass[col] = ok
 
         s_cell = self._rowwise_all(cell, cell_pass) if cell_pass else pd.Series([], dtype='float')
+        self._log_topk(cell_pass, 'V2-ranges-cell')
 
         # UE
         ue_pass = {}
@@ -294,6 +355,7 @@ class ValidityDimension(BaseDimension):
                     ue_pass[col] = ok
 
         s_ue = self._rowwise_all(ue, ue_pass) if ue_pass else pd.Series([], dtype='float')
+        self._log_topk(ue_pass, 'V2-ranges-ue')
 
         series = (pd.concat([s_cell, s_ue], axis=0, ignore_index=True).astype('float')
                 if (s_cell.size or s_ue.size) else pd.Series([], dtype='float'))
@@ -328,8 +390,10 @@ class ValidityDimension(BaseDimension):
                 ok[u.isna() | a.isna()] = np.nan   
                 passes[f'used_le_avail_{used}'] = ok
 
+
         series = self._rowwise_all(cell, passes) if passes else pd.Series([], dtype='float')
         details = {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
+        self._log_topk(passes, 'V3-prb-usage')
         return series, details
 
 
@@ -403,6 +467,7 @@ class ValidityDimension(BaseDimension):
         #self.logger.info(f"DEBUG: passes dictionary = {passes}")
         series = self._rowwise_all(cell, passes) if passes else pd.Series([], dtype='float')
         details = {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
+        self._log_topk(passes, 'V4-business')
         return series, details
 
 
@@ -456,6 +521,8 @@ class ValidityDimension(BaseDimension):
                 s.loc[valid] = ok.loc[valid].astype('float')
 
             checks[f'identity_{side}'] = s
+        
+        self._log_topk(checks, 'V5-identity')
 
         # Combine DL & UL identity per row (NA if neither side applicable)
         series = self._rowwise_all(cell, checks) if checks else pd.Series([], dtype='float')

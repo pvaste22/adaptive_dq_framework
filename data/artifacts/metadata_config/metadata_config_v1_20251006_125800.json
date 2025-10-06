@@ -1,0 +1,41 @@
+{
+  "dataset_info": {
+    "source": "VIAVI O-RAN Simulated Dataset",
+    "expected_entities": {
+      "cells": 52,
+      "ues": 48
+    },
+    "band_configuration": {
+      "B2": {
+        "prb_count": 100,
+        "name": "LTE Band 2"
+      },
+      "B13": {
+        "prb_count": 75,
+        "name": "LTE Band 13"
+      },
+      "N77": {
+        "prb_count": 273,
+        "name": "5G NR Band 77"
+      }
+    },
+    "measurement_interval_seconds": 60
+  },
+  "known_issues": {
+    "prb_tot_unit_mismatch": "PrbTot reported as percentage, needs conversion",
+    "energy_cumulative": "Energy reported as cumulative, needs differencing",
+    "tb_counters_unreliable": "TB counters should be ignored",
+    "qos_flow_semantics": "QosFlow uses 1-second semantics despite 60s intervals",
+    "cqi_zero_meaning": "CQI=0 means no measurement, converted to NaN"
+  },
+  "expected_patterns": {
+    "mimo_zero_rate": 0.86,
+    "cqi_no_measurement_rate": 0.6,
+    "ul_dl_symmetry": 0.87
+  },
+  "phase1_completion": {
+    "timestamp": "2025-10-06T12:57:56.232931",
+    "artifacts_created": 9,
+    "ready_for_phase2": true
+  }
+}

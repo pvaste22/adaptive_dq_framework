@@ -9,8 +9,8 @@ from pathlib import Path
 
 # Load one window
 windows_dir = Path('data/processed/training/v0/windows')
-window_path = windows_dir / 'window_005042_20230104_040200'   # First window  window_000000_20221231_160000  window_009813_20230107_113300  window_010057_20230107_153700
-#  window_002562_20230102_104200   window_005090_20230104_045000  window_008359_20230106_111900 window_000121_20221231_180100  window_005483_20230104_112300  window_005290_20230104_081000  window_005178_20230104_061800  window_005084_20230104_044400 window_005042_20230104_040200
+window_path = windows_dir / 'window_005483_20230104_112300'   # First window  window_000000_20221231_160000  window_009813_20230107_113300  window_010057_20230107_153700
+#  window_002562_20230102_104200   window_005090_20230104_045000  window_008359_20230106_111900 window_000121_20221231_180100  window_005483_20230104_112300  window_005290_20230104_081000  window_005178_20230104_061800  window_005084_20230104_044400 window_005042_20230104_040200 window_000471_20221231_235100
 
 # Initialize
 comp = CompletenessDimension()
@@ -23,7 +23,7 @@ acc = AccuracyDimension()
 window_data = comp.load_window_from_disk(window_path)
 
 # Score it
-"""result = comp.calculate_score(window_data)
+result = comp.calculate_score(window_data)
 
 print(f"Score: {result['score']:.3f}")
 print(f"APR: {result['apr']:.3f}")
@@ -57,7 +57,7 @@ print(f"Score: {val_res['score']:.3f}")
 print(f"APR: {val_res['apr']:.3f}")
 print(f"MPR: {val_res['score']:.3f}")
 print(f"Coverage: {val_res['coverage']:.3f}")
-print(f"Fails: {val_res['details']['fail_counts']}")"""
+print(f"Fails: {val_res['details']['fail_counts']}")
 
 
 acc_res = acc.calculate_score(window_data)
