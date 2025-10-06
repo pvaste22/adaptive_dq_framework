@@ -2,209 +2,196 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple, Optional
 
-from common.constants import COLUMN_NAMES
-from src.quality_dimensions.base_dimension import BaseDimension
+from common.constants import COLUMN_NAMES, NEAR_ZERO_THRESHOLDS
+from .base_dimension import BaseDimension
 
-
-class Accuracy(BaseDimension):
+class AccuracyDimension(BaseDimension):
     """
     Dimension 5: ACCURACY
-    Purpose: Verify that reported KPIs match recomputed reference identities and
-             self-calibrated ratio bands learned in Phase-1.
-
-    Components
-    ----------
-    AC1 Percent identities (row-wise):
-        For each mapping: pct_col == (num/den)*100 within decimals-based tolerance.
-        Decimals keyed by pct_col from dq_baseline['percent_identities'][pct_col]['decimals'].
-
-    AC2 Ratio identities (aggregate):
-        For each mapping: ratio = num/den; check window median within learned IQR
-        from dq_baseline['ratio_identities'][name] -> {num, den, q25, q50, q75, n}.
+    A1: Throughput per-PRB efficiency (aggregate, DL/UL) within training IQR bands
+    A2: Spectral efficiency trip-wire (row-wise) vs cap (global ∧ p99-based)
+    A3: Context rule (row-wise): Thp > eps  =>  PRB_Used > 0
+    Notes:
+      - Throughput columns are in Gbps (dataset spec), using 180 kHz/PRB unless overridden by baseline.
+      - No hardcoded tolerances; everything from dq_baseline or config thresholds.
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(dimension_name='accuracy', *args, **kwargs)
+    def __init__(self):
+        super().__init__(name='accuracy')
+
+        # Column names (fallbacks kept robust)
+        cn = COLUMN_NAMES
+        self.ts_col         = cn.get('timestamp'     , 'timestamp')
+        self.cell_ent_col   = cn.get('cell_entity'   , 'Viavi.Cell.Name')
+        self.ue_ent_col     = cn.get('ue_entity'     , 'Viavi.UE.Name')
+        self.thp_dl_col     = cn.get('throughput_dl' , 'DRB.UEThpDl')   # Gbps
+        self.thp_ul_col     = cn.get('throughput_ul' , 'DRB.UEThpUl')   # Gbps
+        self.prb_used_dl    = cn.get('prb_used_dl'   , 'RRU.PrbUsedDl')
+        self.prb_used_ul    = cn.get('prb_used_ul'   , 'RRU.PrbUsedUl')
+        self.prb_avail_dl   = cn.get('prb_avail_dl'  , 'RRU.PrbAvailDl')
+        self.prb_avail_ul   = cn.get('prb_avail_ul'  , 'RRU.PrbAvailUl')
+        # thresholds
+        self.eps_gbps       = NEAR_ZERO_THRESHOLDS.get('throughput_gbps', 0.001)  # ~1 Mbps
+
+        # ---- Baselines from Phase-1 (dq_baseline) ----
         dq = self.get_dq_baseline() or {}
-
-        # Baseline-driven identity specs (optional)
-        # Shape:
-        # percent_identities = {
-        #   "SomePctCol": {"num": "ColA", "den": "ColB", "decimals": 1},
-        #   ...
-        # }
-        self.percent_ids: Dict[str, Dict] = dq.get('percent_identities', {}) or {}
-
-        # Shape:
-        # ratio_identities = {
-        #   "energy_power_ratio": {"num": "PEE.Energy_interval", "den": "PEE.AvgPower_kWh_per_row",
-        #                          "q25": 0.9, "q50": 1.0, "q75": 1.1, "n": 1234},
-        #   ...
-        # }
-        self.ratio_ids: Dict[str, Dict] = dq.get('ratio_identities', {}) or {}
-
-        # Column name conveniences
-        self.ts_col   = self.column_names.get('timestamp', 'timestamp')
-        self.cell_col = self.column_names.get('cell', 'cell')
-        self.ue_col   = self.column_names.get('ue', 'ue')
-
-        # Cadence for Δt if needed (seconds)
-        self.cadence_sec = float(getattr(self, 'cadence_sec', 60.0))
+        # A1 bands (Mbps/PRB), structure: {'dl': {'q25':..,'q50':..,'q75':..,'n':..}, 'ul': {...}}
+        self.a1_bands = dq.get('accuracy_thp_per_prb_band', {}) or {}
+        # A2 spectral-eff info
+        se_info = dq.get('accuracy_spectral_eff', {}) or {}
+        self.per_prb_khz      = float(se_info.get('per_prb_khz', 180.0))  # LTE-like default
+        self.se_dl_p99        = se_info.get('dl_p99', None)
+        self.se_ul_p99        = se_info.get('ul_p99', None)
+        self.se_abs_cap_glob  = float(se_info.get('abs_cap_global', 30.0))
+        self.se_abs_cap_byband= se_info.get('abs_cap_by_band', None)  # optional; not required
 
         self.logger.info(
-            f"Accuracy initialized: {len(self.percent_ids)} percent identities, "
-            f"{len(self.ratio_ids)} ratio identities."
+            f"Accuracy initialized: A1 bands present={bool(self.a1_bands)}, "
+            f"A2 caps (global={self.se_abs_cap_glob}, p99_dl={self.se_dl_p99}, p99_ul={self.se_ul_p99}), "
+            f"eps_gbps={self.eps_gbps}, per_prb_khz={self.per_prb_khz}"
         )
 
     # ----------------------------- Public API ------------------------------
+    def calculate_score(self, window_data: Dict) -> Dict:
+        ok, err = self.validate_window_data(window_data)
+        if not ok:
+            return {'score': 0.0, 'coverage': 0.0, 'status': 'ERROR',
+                    'details': {'validation_error': err}}
 
-    def calculate_score(self, window_data: Dict[str, pd.DataFrame]) -> Dict:
-        cell = window_data.get('cell', pd.DataFrame())
-        ue   = window_data.get('ue',   pd.DataFrame())
+        cell = window_data.get('cell_data', pd.DataFrame())
+        ue   = window_data.get('ue_data',   pd.DataFrame())
 
-        # AC1: Percent identities (row-wise)
-        ac1_series, ac1_details = self._ac1_percent_identities(cell, ue)
+        # ---------- A1: efficiency per PRB (aggregate tuples) ----------
+        tuples = []
+        a1_details = {}
+        for side, thp_col, prb_col in [
+            ('dl', self.thp_dl_col, self.prb_used_dl),
+            ('ul', self.thp_ul_col, self.prb_used_ul),
+        ]:
+            t, d = self._a1_eff_tuple(cell, thp_col, prb_col, side)
+            if t is not None:
+                tuples.append(t)
+            a1_details[side] = d
 
-        # AC2: Ratio identities (aggregate, using IQR bands)
-        ac2_tuples, ac2_details = self._ac2_ratio_identities(cell, ue)
+        # ---------- A2: spectral efficiency trip-wire (row-wise) ----------
+        a2_series_cell, a2_details = self._a2_se_series(cell)
 
-        # Scoring: one combined row-wise series to avoid base axis=1 truncation
-        series_all = [ac1_series]
-        active_row = [s for s in series_all if (s is not None and s.size > 0 and s.notna().any())]
-        combined = (pd.concat(active_row, axis=0, ignore_index=True).astype('float')
-                    if active_row else pd.Series([], dtype='float'))
+        # ---------- A3: context rule (row-wise) ----------
+        a3_series_cell, a3_details = self._a3_context_series(cell)
 
+        # Aggregate via standard APR/MPR
         apr, mpr, coverage, fails = self._apr_mpr(
-            check_series_list=[combined],
-            check_tuples_list=ac2_tuples
+            check_series_list=[a2_series_cell, a3_series_cell],
+            check_tuples_list=tuples
         )
 
         return {
             'score': mpr,
             'apr': apr,
-            'mpr': mpr,
             'coverage': coverage,
             'details': {
-                'AC1_percent_identities': ac1_details,
-                'AC2_ratio_identities': ac2_details,
+                'A1_efficiency_bands': a1_details,
+                'A2_spectral_efficiency': a2_details,
+                'A3_context_rule': a3_details,
                 'fail_counts': fails
             }
         }
 
-    # --------------------------- Component AC1 ----------------------------
-
-    def _ac1_percent_identities(self, cell: pd.DataFrame, ue: pd.DataFrame) -> Tuple[pd.Series, Dict]:
+    # ----------------------------- A1 helper ------------------------------
+    def _a1_eff_tuple(self, df: pd.DataFrame, thp_col: str, prb_col: str, side: str) -> Tuple[Optional[Tuple[int,int]], Dict]:
         """
-        Generic percent identities:
-          pct_col ≈ (num / den) * 100 within tolerance = half-ULP at learned decimals.
-        We allow mapping entries for either table; if a column is missing, it is skipped.
+        Window-level tuple: median( (Thp_Gbps*1000) / PRB_Used ) ∈ [q25, q75]
+        Returns: ((passed, total), details) or (None, details) if not applicable
         """
-        details: Dict = {'checks': []}
-        series_list: List[pd.Series] = []
+        det: Dict = {'side': side, 'status': 'NA'}
+        if df.empty or thp_col not in df.columns or prb_col not in df.columns:
+            det['reason'] = 'missing columns or empty df'
+            return None, det
 
-        if not self.percent_ids:
-            return pd.Series([], dtype='float'), {'note': 'no percent identities in baseline'}
+        thp_gbps = pd.to_numeric(df[thp_col], errors='coerce')
+        prb_used = pd.to_numeric(df[prb_col], errors='coerce').clip(lower=0)
+        s = (thp_gbps * 1000.0) / prb_used.replace(0, np.nan)   # Mbps/PRB
+        s = s.replace([np.inf, -np.inf], np.nan).dropna()
 
-        def _build_series(df: pd.DataFrame, name: str, spec: Dict) -> Optional[pd.Series]:
-            pct_col = name
-            num_col = spec.get('num')
-            den_col = spec.get('den')
-            d = int(spec.get('decimals', 2))
+        if s.size < 10:
+            det.update({'reason': 'insufficient data', 'n': int(s.size)})
+            return None, det
 
-            if df.empty or not {pct_col, num_col, den_col}.issubset(df.columns):
-                return None
+        med = float(np.median(s))
+        band = self.a1_bands.get(side, None)
+        det.update({'median_mbps_per_prb': med, 'band': band})
 
-            num = pd.to_numeric(df[num_col], errors='coerce')
-            den = pd.to_numeric(df[den_col], errors='coerce')
-            pct = pd.to_numeric(df[pct_col], errors='coerce')
+        if not band or any(k not in band for k in ('q25', 'q75')):
+            det['reason'] = 'no baseline band'
+            return None, det
 
-            s = pd.Series(np.nan, index=df.index, dtype='float')
-            valid = num.notna() & den.notna() & pct.notna() & (den > 0)
+        q25, q75 = float(band['q25']), float(band['q75'])
+        passed = int(q25 <= med <= q75)
+        total  = 1
+        det.update({'q25': q25, 'q75': q75, 'passed': passed, 'total': total, 'n': int(s.size)})
+        return (passed, total), det
 
-            if valid.any():
-                calc = (num / den) * 100.0
-                calc = calc.clip(lower=0.0, upper=100.0)
-                tgt  = pct.clip(lower=0.0, upper=100.0)
-                tol  = (10.0 ** (-d)) / 2.0 + 1e-9
-                ok   = (calc - tgt).abs() <= tol
-                s.loc[valid] = ok.loc[valid].astype('float')
-
-            details['checks'].append({
-                'pct_col': pct_col, 'num': num_col, 'den': den_col, 'decimals': d,
-                'applicable': int(s.notna().sum()), 'passed': int((s == 1.0).sum())
-            })
-            return s
-
-        # Try to build for both tables; many entries will apply only to cell
-        for pct_col, spec in self.percent_ids.items():
-            sc = _build_series(cell, pct_col, spec)
-            if sc is not None:
-                series_list.append(sc)
-            su = _build_series(ue, pct_col, spec)
-            if su is not None:
-                series_list.append(su)
-
-        series = (pd.concat(series_list, axis=0, ignore_index=True).astype('float')
-                  if series_list else pd.Series([], dtype='float'))
-
-        details['applicable'] = int(series.notna().sum())
-        details['passed']     = int((series == 1.0).sum())
-        return series, details
-
-    # --------------------------- Component AC2 ----------------------------
-
-    def _ac2_ratio_identities(self, cell: pd.DataFrame, ue: pd.DataFrame) -> Tuple[List[Tuple[int,int]], Dict]:
+    # ----------------------------- A2 helper ------------------------------
+    def _a2_se_series(self, df: pd.DataFrame) -> Tuple[pd.Series, Dict]:
         """
-        Generic ratio identities with learned IQR bands.
-        For each mapping:
-           ratio = num / den (per row; rows with den<=0 or NaNs skipped),
-           take median over window; pass if median in [q25, q75].
-        Returns: list of aggregate tuples [(passed, total), ...]
+        Row-wise: SE = (Thp_bps) / (PRB_Avail * per_prb_Hz) <= cap
+        cap = min(abs_cap_global, 1.2 * p99) if p99 available else abs_cap_global
         """
-        tuples: List[Tuple[int, int]] = []
-        info: List[Dict] = []
+        det: Dict = {}
+        if df.empty or self.thp_dl_col not in df.columns or self.prb_avail_dl not in df.columns:
+            # return empty float series
+            return pd.Series([], dtype='float'), {'note': 'missing columns or empty df'}
 
-        if not self.ratio_ids:
-            return tuples, {'note': 'no ratio identities in baseline'}
+        # Caps (DL/UL may differ if p99 present)
+        cap_dl = min(self.se_abs_cap_glob, 1.2 * self.se_dl_p99) if self.se_dl_p99 else self.se_abs_cap_glob
+        cap_ul = min(self.se_abs_cap_glob, 1.2 * self.se_ul_p99) if self.se_ul_p99 else self.se_abs_cap_glob
 
-        def _window_tuple(df: pd.DataFrame, name: str, spec: Dict) -> Optional[Tuple[Tuple[int,int], Dict]]:
-            num_col = spec.get('num')
-            den_col = spec.get('den')
-            q25 = spec.get('q25'); q75 = spec.get('q75')
-            if df.empty or not {num_col, den_col}.issubset(df.columns):
-                return None
+        def per_side(thp_col, avail_col, cap):
+            thp_gbps = pd.to_numeric(df[thp_col], errors='coerce')
+            avail    = pd.to_numeric(df[avail_col], errors='coerce')
+            denom_hz = avail * (self.per_prb_khz * 1e3)
+            se = (thp_gbps * 1e9) / denom_hz.replace(0, np.nan)
+            se = se.replace([np.inf, -np.inf], np.nan)
+            ok = se.le(cap).astype('float')   # True→1.0, False→0.0, NaN stays NaN
+            ok[se.isna()] = np.nan            # not applicable rows
+            return ok, {
+                'cap': float(cap),
+                'applicable': int(ok.notna().sum()),
+                'passed': int((ok == 1.0).sum()),
+            }
 
-            num = pd.to_numeric(df[num_col], errors='coerce')
-            den = pd.to_numeric(df[den_col], errors='coerce')
+        s_dl, d_dl = per_side(self.thp_dl_col, self.prb_avail_dl, cap_dl)
+        s_ul, d_ul = per_side(self.thp_ul_col, self.prb_avail_ul, cap_ul)
 
-            valid = num.notna() & den.notna() & (den > 0)
-            if not valid.any():
-                return ((0, 0), {'name': name, 'note': 'no valid rows'})
+        # merge two row-wise series (concat)
+        series = pd.concat([s_dl, s_ul], ignore_index=True) if len(s_dl) or len(s_ul) else pd.Series([], dtype='float')
+        det.update({'dl': d_dl, 'ul': d_ul})
+        return series, det
 
-            r = (num.loc[valid] / den.loc[valid]).replace([np.inf, -np.inf], np.nan).dropna()
-            if r.empty:
-                return ((0, 0), {'name': name, 'note': 'no ratio after filtering'})
-            med = float(np.median(r))
-            if (q25 is None) or (q75 is None):
-                # No band → skip; accuracy component not applicable
-                return ((0, 0), {'name': name, 'median': med, 'note': 'missing band'})
+    # ----------------------------- A3 helper ------------------------------
+    def _a3_context_series(self, df: pd.DataFrame) -> Tuple[pd.Series, Dict]:
+        """
+        Row-wise: If Thp > eps (Gbps), then PRB_Used > 0  (both DL & UL)
+        """
+        det: Dict = {}
+        if df.empty or any(c not in df.columns for c in [self.thp_dl_col, self.thp_ul_col, self.prb_used_dl, self.prb_used_ul]):
+            return pd.Series([], dtype='float'), {'note': 'missing columns or empty df'}
 
-            passed = int((med >= float(q25)) and (med <= float(q75)))
-            details = {'name': name, 'median': med, 'q25': float(q25), 'q75': float(q75), 'n_rows': int(valid.sum())}
-            return ((passed, 1), details)
+        def per_side(thp_col, prb_col):
+            thp = pd.to_numeric(df[thp_col], errors='coerce')
+            prb = pd.to_numeric(df[prb_col], errors='coerce')
+            # condition: either throughput is ~0 (<=eps) OR PRB>0
+            ok = ((thp <= self.eps_gbps) | (prb > 0)).astype('float')
+            ok[thp.isna() | prb.isna()] = np.nan
+            return ok, {
+                'eps_gbps': float(self.eps_gbps),
+                'applicable': int(ok.notna().sum()),
+                'passed': int((ok == 1.0).sum()),
+            }
 
-        # Evaluate on cell and UE where applicable
-        for name, spec in self.ratio_ids.items():
-            out_c = _window_tuple(cell, name, spec)
-            if out_c:
-                t, d = out_c; tuples.append(t); info.append(d)
-            out_u = _window_tuple(ue,   name, spec)
-            if out_u:
-                t, d = out_u; tuples.append(t); info.append(d)
+        s_dl, d_dl = per_side(self.thp_dl_col, self.prb_used_dl)
+        s_ul, d_ul = per_side(self.thp_ul_col, self.prb_used_ul)
 
-        details = {
-            'checks': info,
-            'applicable': int(sum(t[1] for t in tuples)),  # totals of denominators
-            'passed': int(sum(t[0] for t in tuples))
-        }
-        return tuples, details
+        series = pd.concat([s_dl, s_ul], ignore_index=True) if len(s_dl) or len(s_ul) else pd.Series([], dtype='float')
+        det.update({'dl': d_dl, 'ul': d_ul})
+        return series, det

@@ -4,6 +4,7 @@ from quality_dimensions.completeness import CompletenessDimension
 from quality_dimensions.timeliness import TimelinessDimension
 from quality_dimensions.consistency import ConsistencyDimension
 from quality_dimensions.validity import ValidityDimension
+from quality_dimensions.accuracy import AccuracyDimension
 from pathlib import Path
 
 # Load one window
@@ -16,12 +17,13 @@ comp = CompletenessDimension()
 timely = TimelinessDimension()
 cons = ConsistencyDimension()
 val = ValidityDimension()
+acc = AccuracyDimension()
 
 # Load window
 window_data = comp.load_window_from_disk(window_path)
 
 # Score it
-result = comp.calculate_score(window_data)
+"""result = comp.calculate_score(window_data)
 
 print(f"Score: {result['score']:.3f}")
 print(f"APR: {result['apr']:.3f}")
@@ -55,4 +57,14 @@ print(f"Score: {val_res['score']:.3f}")
 print(f"APR: {val_res['apr']:.3f}")
 print(f"MPR: {val_res['score']:.3f}")
 print(f"Coverage: {val_res['coverage']:.3f}")
-print(f"Fails: {val_res['details']['fail_counts']}")
+print(f"Fails: {val_res['details']['fail_counts']}")"""
+
+
+acc_res = acc.calculate_score(window_data)
+
+
+print(f"Score: {acc_res['score']:.3f}")
+print(f"APR: {acc_res['apr']:.3f}")
+print(f"MPR: {acc_res['score']:.3f}")
+print(f"Coverage: {acc_res['coverage']:.3f}")
+print(f"Fails: {acc_res['details']['fail_counts']}")

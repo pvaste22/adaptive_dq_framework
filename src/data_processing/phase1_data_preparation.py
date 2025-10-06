@@ -924,7 +924,8 @@ class Phase1Orchestrator:
                 if dl_band or ul_band:
                     dq['ue_cell_prb_ratio'] = {'dl': dl_band, 'ul': ul_band}
                 else:
-                    self.logger.info(f"PRB reconciliation: insufficient samples (<{min_n}).")                    
+                    self.logger.info(f"PRB reconciliation: insufficient samples (<{min_n}).")   
+        # ---- 6) PRB tot <= Avail slack , used <= tot slack  ----           
         def _learn_prb_rule_slack(df: pd.DataFrame, side: str) -> dict:
             # column names
             tot_abs = f"RRU.PrbTot{side}_abs"
@@ -970,6 +971,47 @@ class Phase1Orchestrator:
             "tot_le_avail": {"dl": slack_dl["tot_le_avail"], "ul": slack_ul["tot_le_avail"]},
             "used_le_tot":  {"dl": slack_dl["used_le_tot"],  "ul": slack_ul["used_le_tot"]},
             "n":            {"dl": slack_dl["n"],            "ul": slack_ul["n"]}
+        }
+
+        # --- 7) Accuracy: Throughput per-PRB efficiency bands (Mbps/PRB)
+        def _eff_per_prb(df, thp_col, prb_col):
+            need = {thp_col, prb_col}.issubset(df.columns) and not df.empty
+            if not need: return None
+            thp = pd.to_numeric(df[thp_col], errors='coerce')          # Gbps
+            prb = pd.to_numeric(df[prb_col], errors='coerce').clip(lower=1)
+            s = (thp*1000.0) / prb.replace(0, np.nan) # Gbps → Mbps; unit = Mbps/PRB
+            s = s.replace([np.inf, -np.inf], np.nan).dropna()
+            if s.size < 30: return None
+            q25, q50, q75 = np.percentile(s, [25, 50, 75])
+            return {'q25': float(q25), 'q50': float(q50), 'q75': float(q75), 'n': int(s.size)}
+
+        a1_dl = _eff_per_prb(cell_data, 'DRB.UEThpDl', 'RRU.PrbUsedDl')
+        a1_ul = _eff_per_prb(cell_data, 'DRB.UEThpUl', 'RRU.PrbUsedUl')
+        dq['accuracy_thp_per_prb_band'] = {'dl': a1_dl, 'ul': a1_ul}
+
+        # --- 8) Accuracy: Spectral efficiency stats (bps/Hz)
+        per_prb_khz = 180.0  # prefer config/constant; keep in baseline for Phase-2
+
+        def _se_p99(df, thp_col, avail_col):
+            need = {thp_col, avail_col}.issubset(df.columns) and not df.empty
+            if not need: return None
+            thp_gbps = pd.to_numeric(df[thp_col], errors='coerce')          # Gbps
+            avail    = pd.to_numeric(df[avail_col], errors='coerce')         # PRBs
+            denom_hz = (avail * per_prb_khz * 1e3)                          # per_prb_khz=180 → Hz
+            se = ((thp_gbps * 1e9) / denom_hz).replace([np.inf, -np.inf], np.nan).dropna()
+            if se.size < 30: return None
+            return float(np.percentile(se, 99))
+
+        a2_dl_p99 = _se_p99(cell_data, 'DRB.UEThpDl', 'RRU.PrbAvailDl')
+        a2_ul_p99 = _se_p99(cell_data, 'DRB.UEThpUl', 'RRU.PrbAvailUl')
+
+        # absolute physics caps: global 
+        abs_cap_global = 30.0  
+        dq['accuracy_spectral_eff'] = {
+            'per_prb_khz': per_prb_khz,
+            'dl_p99': a2_dl_p99,
+            'ul_p99': a2_ul_p99,
+            'abs_cap_global': abs_cap_global,            
         }
 
         # Metadata
