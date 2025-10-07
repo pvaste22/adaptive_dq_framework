@@ -75,6 +75,8 @@ dataset_expectations:
       mimo_metrics: ['RRU.MaxLayerDlMimo', 'CARR.AverageLayersDl']
       tb_metrics_unreliable: ['TB.TotNbrDl', 'TB.TotNbrUl']
       qos_flow_metrics: ['QosFlow.TotPdcpPduVolumeDl', 'QosFlow.TotPdcpPduVolumeUl']
+
+      unreliable_metrics: ['TB.TotNbrDl','TB.TotNbrUl']
     
     # Known data issues
     data_quirks:

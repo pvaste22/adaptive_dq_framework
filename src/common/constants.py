@@ -103,6 +103,7 @@ for corr_name, corr_data in DATASET_EXPECTATIONS.get('correlations', {}).items()
             corr_data.get('tolerance', 0.30)
         ))"""
 
+UNRELIABLE_METRICS = MAIN_CONFIG.get('unreliable_metrics',['TB.TotNbrDl','TB.TotNbrUl'])
 # Temporal coefficients
 TEMPORAL_COEFFICIENTS = DATASET_EXPECTATIONS.get('temporal', {})
 

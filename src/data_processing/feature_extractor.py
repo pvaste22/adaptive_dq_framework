@@ -10,7 +10,7 @@ import json
 
 # Import column name definitions if available. Fallback to sensible defaults
 try:
-    from common.constants import COLUMN_NAMES, REQUIRED_DIRS
+    from common.constants import COLUMN_NAMES, REQUIRED_DIRS, UNRELIABLE_METRICS
     feats_dir = Path(REQUIRED_DIRS.get('artifacts', './artifacts'))
 except ImportError:
     COLUMN_NAMES = {
@@ -19,7 +19,7 @@ except ImportError:
         'ue_entity': 'ue_entity',
     }
     feats_dir = Path('./artifacts')
-
+    UNRELIABLE_METRICS = {"TB.TotNbrDl", "TB.TotNbrUl"}
 
 FEATURES_SCHEMA_PATH = feats_dir / "features" / "features_schema.json"
 
@@ -109,8 +109,14 @@ def _numeric_stats(df: pd.DataFrame, prefix: str) -> Dict[str, Any]:
     feats: Dict[str, Any] = {}
     if df is None or df.empty:
         return feats
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    for col in numeric_cols:
+    num = df.select_dtypes(include=[np.number]).copy()
+    if num.empty:
+        return feats
+    cols_keep = [c for c in num.columns if c not in UNRELIABLE_METRICS]
+    num = num[cols_keep]
+    if num.empty:
+        return feats
+    for col in num:
         series = pd.to_numeric(df[col], errors='coerce').dropna()
         if series.empty:
             continue
@@ -160,9 +166,11 @@ def _ratio_features(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
 
         for dl_ul in ('Dl', 'Ul'):
             used = f'RRU.PrbUsed{dl_ul}'
-            tot  = f'RRU.PrbTot{dl_ul}'
-            if used in cell.columns and tot in cell.columns:
-                r = safe_ratio(used, tot)
+            tot  = f'RRU.PrbTot{dl_ul}_abs'
+            avail   = f'RRU.PrbAvail{dl_ul}'
+            if used in cell.columns and (tot in cell.columns or avail in cell.columns):
+                denom = cell.get(tot) if tot in cell.columns else cell.get(avail)
+                r = safe_ratio(used, denom)
                 if not r.empty:
                     feats[f'cell_prb_util_{dl_ul.lower()}_mean'] = float(r.mean())
                     feats[f'cell_prb_util_{dl_ul.lower()}_q25']  = float(r.quantile(0.25))
@@ -182,6 +190,16 @@ def _ratio_features(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
                     feats[f'ue_thp_per_prb_{dl_ul.lower()}_mean'] = float(r.mean())
                     feats[f'ue_thp_per_prb_{dl_ul.lower()}_q25']  = float(r.quantile(0.25))
                     feats[f'ue_thp_per_prb_{dl_ul.lower()}_q75']  = float(r.quantile(0.75))
+     # Energy per throughput (DL)
+     if cell is not None and not cell.empty:
+         if 'PEE.Energy_interval' in cell.columns and 'DRB.UEThpDl' in cell.columns:
+             energy = pd.to_numeric(cell['PEE.Energy_interval'], errors='coerce')
+             thp_dl = pd.to_numeric(cell['DRB.UEThpDl'], errors='coerce')
+             r = energy / (thp_dl + 1e-9)  # avoid division by zero
+             r = r.replace([np.inf, -np.inf], np.nan).dropna()
+             if not r.empty:
+                 feats['cell_energy_per_thp_dl_mean'] = float(r.mean())
+                 feats['cell_energy_per_thp_dl_q75']  = float(r.quantile(0.75))
     return feats
 
 def _null_density(df: pd.DataFrame, prefix: str) -> Dict[str, Any]:
@@ -268,7 +286,7 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     # Basic structural counts
     feats.update(_basic_counts(cell, ue))
     feats.update(_duplicate_counts(cell, ue))
-    #timeliness cadence features
+    #timeliness features
     meas_sec = None
     try:
         from common.constants import MEAS_INTERVAL_SEC
@@ -278,6 +296,17 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
 
     feats.update(_time_cadence_features(cell, 'cell', meas_sec))
     feats.update(_time_cadence_features(ue, 'ue', meas_sec))
+     ts = None
+     if 'window_start_time' in metadata:
+         ts = pd.to_datetime(metadata['window_start_time'], unit='s', errors='coerce')
+     elif not cell.empty and COLUMN_NAMES.get('timestamp') in cell.columns:
+         first_ts = cell[COLUMN_NAMES['timestamp']].iloc[0]
+         ts = pd.to_datetime(first_ts, unit='s', errors='coerce')
+     if ts is not None and not pd.isna(ts):
+         feats['meta_hour_of_day'] = int(ts.hour)
+         feats['meta_day_of_week'] = int(ts.dayofweek)  # Monday=0
+         # define peak hours (example: 16–18 as peak)
+         feats['meta_is_peak_hour'] = 1 if ts.hour in [16, 17, 18] else 0
     #completeness features
     feats.update(_null_density(cell, 'cell'))
     feats.update(_null_density(ue, 'ue'))
