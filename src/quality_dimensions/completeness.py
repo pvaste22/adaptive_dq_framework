@@ -43,7 +43,7 @@ class CompletenessDimension(BaseDimension):
         self.expected_cells = EXPECTED_ENTITIES['cells']
         self.expected_ues = EXPECTED_ENTITIES['ues']
         self.measurement_interval = MEAS_INTERVAL_SEC
-        
+        self.logger.info("Completeness initiated")
         # Expected patterns from data analysis (informational)
         self.cqi_expected_zero_rate = EXPECTED_PATTERNS.get('cqi_no_measurement_rate', 0.60)
         self.mimo_expected_zero_rate = EXPECTED_PATTERNS.get('mimo_zero_rate', 0.86)
@@ -64,13 +64,13 @@ class CompletenessDimension(BaseDimension):
         # Load Hour-of-Day baselines (temporal_templates) for entity coverage
         self.hod_baselines = self._load_hod_baselines(baselines_path)
 
-        self.logger.info(
+        """self.logger.info(
             f"Completeness dimension initialized: {self.expected_cells} cells, {self.expected_ues} UEs (fallbacks)."
         )
         self.logger.debug(
             f"Expected patterns - CQI Zero-as-no-report: {self.cqi_expected_zero_rate:.1%}, "
             f"MIMO zeros: {self.mimo_expected_zero_rate:.1%}"
-        )
+        )"""
 
     
     def _load_hod_baselines(self, baselines_path: Optional[Path]) -> Dict:
@@ -80,7 +80,7 @@ class CompletenessDimension(BaseDimension):
             templates = self.load_artifact_baseline('temporal_templates')
     
             if templates:
-                self.logger.info("Successfully loaded HoD baselines using base class loader")
+                #self.logger.info("Successfully loaded HoD baselines using base class loader")
                 return templates
 
             # Fallback to manual loading if needed
@@ -88,7 +88,7 @@ class CompletenessDimension(BaseDimension):
                 try:
                     with open(baselines_path, 'rb') as f:
                         templates = pickle.load(f)
-                        self.logger.info("Loaded HoD baselines from provided path")
+                        #self.logger.info("Loaded HoD baselines from provided path")
                         return templates
                 except Exception as e:
                     self.logger.error(f"Error loading from provided path: {e}")
@@ -190,7 +190,7 @@ class CompletenessDimension(BaseDimension):
             combined = pd.Series([], dtype='float')
 
     
-        self.logger.debug(f"C1: Check result={combined} => details={details}")
+        #self.logger.debug(f"C1: Check result={combined} => details={details}")
         return combined, details
     
     def _score_entity_presence(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Tuple[Tuple[int, int], Dict]:

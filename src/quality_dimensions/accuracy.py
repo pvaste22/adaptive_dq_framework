@@ -45,11 +45,13 @@ class AccuracyDimension(BaseDimension):
         self.se_abs_cap_glob  = float(se_info.get('abs_cap_global', 30.0))
         self.se_abs_cap_byband= se_info.get('abs_cap_by_band', None)  # optional; not required
 
-        self.logger.info(
-            f"Accuracy initialized: A1 bands present={bool(self.a1_bands)}, "
-            f"A2 caps (global={self.se_abs_cap_glob}, p99_dl={self.se_dl_p99}, p99_ul={self.se_ul_p99}), "
-            f"eps_gbps={self.eps_gbps}, per_prb_khz={self.per_prb_khz}"
-        )
+        self.logger.info("Accuracy initiated")
+
+        #self.logger.info(
+            #f"Accuracy initialized: A1 bands present={bool(self.a1_bands)}, "
+            #f"A2 caps (global={self.se_abs_cap_glob}, p99_dl={self.se_dl_p99}, p99_ul={self.se_ul_p99}), "
+            #f"eps_gbps={self.eps_gbps}, per_prb_khz={self.per_prb_khz}"
+        #)
 
     # ----------------------------- Public API ------------------------------
     def calculate_score(self, window_data: Dict) -> Dict:

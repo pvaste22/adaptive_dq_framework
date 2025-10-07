@@ -5,6 +5,7 @@ from quality_dimensions.timeliness import TimelinessDimension
 from quality_dimensions.consistency import ConsistencyDimension
 from quality_dimensions.validity import ValidityDimension
 from quality_dimensions.accuracy import AccuracyDimension
+from scoring.traditional_scorer import score_window, score_windows_in_directory
 from pathlib import Path
 
 # Load one window
@@ -22,8 +23,22 @@ acc = AccuracyDimension()
 # Load window
 window_data = comp.load_window_from_disk(window_path)
 
+scores= score_window(window_path)
+for dim_name, res in scores.items():
+    print(f"  {dim_name}: score={res.get('score'):.4f}, "
+            f"apr={res.get('apr'):.4f}, "
+            f"coverage={res.get('coverage'):.4f}")
+    
+print("\nScoring all windows in directory:\n" + "-" * 40)
+all_scores = score_windows_in_directory(windows_dir)
+for wid, metrics in all_scores.items():
+    print(f"Window {wid} summary:")
+    for dim_name, res in metrics.items():
+        print(f"  {dim_name}: score={res.get('score'):.4f}, "
+            f"apr={res.get('apr'):.4f}, coverage={res.get('coverage'):.4f}")    
+
 # Score it
-result = comp.calculate_score(window_data)
+"""result = comp.calculate_score(window_data)
 
 print(f"Score: {result['score']:.3f}")
 print(f"APR: {result['apr']:.3f}")
@@ -67,4 +82,4 @@ print(f"Score: {acc_res['score']:.3f}")
 print(f"APR: {acc_res['apr']:.3f}")
 print(f"MPR: {acc_res['score']:.3f}")
 print(f"Coverage: {acc_res['coverage']:.3f}")
-print(f"Fails: {acc_res['details']['fail_counts']}")
+print(f"Fails: {acc_res['details']['fail_counts']}")"""

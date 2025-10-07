@@ -27,7 +27,8 @@ class TimelinessDimension(BaseDimension):
         self.ts_col = COLUMN_NAMES.get('timestamp', 'timestamp')
         self.cell_col = COLUMN_NAMES.get('cell_entity', 'Viavi.Cell.Name')
         self.ue_col = COLUMN_NAMES.get('ue_entity', 'Viavi.UE.Name')
-        self.logger.info(f"Timeliness initialized: cadence={self.cadence_sec}s, ts_resolution={self.ts_resolution_sec}s")
+        #self.logger.info(f"Timeliness initialized: cadence={self.cadence_sec}s, ts_resolution={self.ts_resolution_sec}s")
+        self.logger.info("Timeliness initiated")
 
     def calculate_score(self, window_data: Dict) -> Dict:
         ok, err = self.validate_window_data(window_data)
@@ -46,7 +47,7 @@ class TimelinessDimension(BaseDimension):
         # T3: Monotonicity / no out-of-order (row-wise)
         t3_series, t3_details = self._row_monotonic_ok(cell, ue)
 
-        self.logger.info(f"Timeliness initialized: T1 pass={t1_details['passed'] / t1_details['applicable']}, t3 pass={t3_details['passed'] / t3_details['applicable']}")
+        #self.logger.info(f"Timeliness initialized: T1 pass={t1_details['passed'] / t1_details['applicable']}, t3 pass={t3_details['passed'] / t3_details['applicable']}")
 
         apr, mpr, coverage, fails = self._apr_mpr(
             check_series_list=[t1_series, t3_series],

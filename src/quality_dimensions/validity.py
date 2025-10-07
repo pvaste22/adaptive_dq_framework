@@ -105,8 +105,8 @@ class ValidityDimension(BaseDimension):
             check_series_list=[combined],
             check_tuples_list=[]  # no aggregate checks in validity for now
         )
-        self.logger.info(f"validity: v4 details = {v4_details}")
-        self.logger.info(f"[Validity] V1={v1_details} V2={v2_details} V3={v3_details} V4={v4_details} V5={v5_details}")
+        #self.logger.info(f"validity: v4 details = {v4_details}")
+        #self.logger.info(f"[Validity] V1={v1_details} V2={v2_details} V3={v3_details} V4={v4_details} V5={v5_details}")
 
         return {
             'score': mpr,
@@ -275,7 +275,7 @@ class ValidityDimension(BaseDimension):
                     cell_pass[col] = ok
 
         s_cell = self._rowwise_all(cell, cell_pass) if cell_pass else pd.Series([], dtype='float')
-        self._log_topk(cell_pass, 'V1-types-cell')
+        #self._log_topk(cell_pass, 'V1-types-cell')
         # UE
         ue_pass = {}
         if not ue.empty:
@@ -290,7 +290,7 @@ class ValidityDimension(BaseDimension):
 
         
         
-        self._log_topk(ue_pass, 'V1-types-ue')
+        #self._log_topk(ue_pass, 'V1-types-ue')
         # one series for the component = stack cell+ue row series
         series = (pd.concat([s_cell, s_ue], axis=0, ignore_index=True).astype('float')
                 if (s_cell.size or s_ue.size) else pd.Series([], dtype='float'))
@@ -338,7 +338,7 @@ class ValidityDimension(BaseDimension):
                     cell_pass[col] = ok
 
         s_cell = self._rowwise_all(cell, cell_pass) if cell_pass else pd.Series([], dtype='float')
-        self._log_topk(cell_pass, 'V2-ranges-cell')
+        #self._log_topk(cell_pass, 'V2-ranges-cell')
 
         # UE
         ue_pass = {}
@@ -355,7 +355,7 @@ class ValidityDimension(BaseDimension):
                     ue_pass[col] = ok
 
         s_ue = self._rowwise_all(ue, ue_pass) if ue_pass else pd.Series([], dtype='float')
-        self._log_topk(ue_pass, 'V2-ranges-ue')
+        #self._log_topk(ue_pass, 'V2-ranges-ue')
 
         series = (pd.concat([s_cell, s_ue], axis=0, ignore_index=True).astype('float')
                 if (s_cell.size or s_ue.size) else pd.Series([], dtype='float'))
@@ -393,7 +393,7 @@ class ValidityDimension(BaseDimension):
 
         series = self._rowwise_all(cell, passes) if passes else pd.Series([], dtype='float')
         details = {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
-        self._log_topk(passes, 'V3-prb-usage')
+        #self._log_topk(passes, 'V3-prb-usage')
         return series, details
 
 
@@ -467,7 +467,7 @@ class ValidityDimension(BaseDimension):
         #self.logger.info(f"DEBUG: passes dictionary = {passes}")
         series = self._rowwise_all(cell, passes) if passes else pd.Series([], dtype='float')
         details = {'applicable': int(series.notna().sum()), 'passed': int((series == 1.0).sum())}
-        self._log_topk(passes, 'V4-business')
+        #self._log_topk(passes, 'V4-business')
         return series, details
 
 
@@ -522,7 +522,7 @@ class ValidityDimension(BaseDimension):
 
             checks[f'identity_{side}'] = s
         
-        self._log_topk(checks, 'V5-identity')
+        #self._log_topk(checks, 'V5-identity')
 
         # Combine DL & UL identity per row (NA if neither side applicable)
         series = self._rowwise_all(cell, checks) if checks else pd.Series([], dtype='float')

@@ -19,7 +19,7 @@ class ConsistencyDimension(BaseDimension):
         self.cadence_sec: float = float(dq.get('cadence_sec', MEAS_INTERVAL_SEC))
         self.recon_band_thp  = dq.get('ue_cell_thp_ratio') or {} 
         self.recon_band_prb = dq.get('ue_cell_prb_ratio') or {}
-        self.logger.info(f"Consistency init: thp band={self.recon_band_thp }, prb_band={self.recon_band_prb}")
+        #self.logger.info(f"Consistency init: thp band={self.recon_band_thp }, prb_band={self.recon_band_prb}")
         self.recon_min_n = int(getattr(self, 'reconciliation_min_samples', 30))
         self.recon_window_min_samples = 5
         self.ts_col   = COLUMN_NAMES.get('timestamp', 'timestamp')
@@ -29,7 +29,8 @@ class ConsistencyDimension(BaseDimension):
         self.energy_band = (dq.get('energy_power_band') or {})
         # Optional: field ranges to infer 'near-zero throughput' floor (no hardcode)
         self.field_ranges = self.load_artifact_baseline('field_ranges') or {}
-        self.logger.info(f"Consistency init: cadence={self.cadence_sec}s, energy_band={self.energy_band or 'NA'}")
+        #self.logger.info(f"Consistency init: cadence={self.cadence_sec}s, energy_band={self.energy_band or 'NA'}")
+        self.logger.info("Consistency initiated")
 
     def calculate_score(self, window_data: Dict) -> Dict:
         ok, err = self.validate_window_data(window_data)
@@ -61,7 +62,7 @@ class ConsistencyDimension(BaseDimension):
             check_series_list=active_series,
             check_tuples_list=active_tuples
         )
-        self.logger.info(f"Consistency: cs2 ={cs2_details}, cs3 thp={cs3t_details}, cs3 prb={cs3p_details}")
+        #self.logger.info(f"Consistency: cs2 ={cs2_details}, cs3 thp={cs3t_details}, cs3 prb={cs3p_details}")
         return {
             'score': mpr,
             'apr': apr,
