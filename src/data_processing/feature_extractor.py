@@ -190,16 +190,16 @@ def _ratio_features(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
                     feats[f'ue_thp_per_prb_{dl_ul.lower()}_mean'] = float(r.mean())
                     feats[f'ue_thp_per_prb_{dl_ul.lower()}_q25']  = float(r.quantile(0.25))
                     feats[f'ue_thp_per_prb_{dl_ul.lower()}_q75']  = float(r.quantile(0.75))
-     # Energy per throughput (DL)
-     if cell is not None and not cell.empty:
-         if 'PEE.Energy_interval' in cell.columns and 'DRB.UEThpDl' in cell.columns:
-             energy = pd.to_numeric(cell['PEE.Energy_interval'], errors='coerce')
-             thp_dl = pd.to_numeric(cell['DRB.UEThpDl'], errors='coerce')
-             r = energy / (thp_dl + 1e-9)  # avoid division by zero
-             r = r.replace([np.inf, -np.inf], np.nan).dropna()
-             if not r.empty:
-                 feats['cell_energy_per_thp_dl_mean'] = float(r.mean())
-                 feats['cell_energy_per_thp_dl_q75']  = float(r.quantile(0.75))
+    # Energy per throughput (DL)
+    if cell is not None and not cell.empty:
+        if 'PEE.Energy_interval' in cell.columns and 'DRB.UEThpDl' in cell.columns:
+            energy = pd.to_numeric(cell['PEE.Energy_interval'], errors='coerce')
+            thp_dl = pd.to_numeric(cell['DRB.UEThpDl'], errors='coerce')
+            r = energy / (thp_dl + 1e-9)  # avoid division by zero
+            r = r.replace([np.inf, -np.inf], np.nan).dropna()
+            if not r.empty:
+                feats['cell_energy_per_thp_dl_mean'] = float(r.mean())
+                feats['cell_energy_per_thp_dl_q75']  = float(r.quantile(0.75))
     return feats
 
 def _null_density(df: pd.DataFrame, prefix: str) -> Dict[str, Any]:
@@ -279,17 +279,15 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     ue = window_data.get('ue_data', pd.DataFrame())
     metadata = window_data.get('metadata', {}) or {}
     feats: Dict[str, Any] = {}
-         ts = None
-     if 'window_start_time' in metadata:
-         ts = pd.to_datetime(metadata['window_start_time'], unit='s', errors='coerce')
-     elif not cell.empty and COLUMN_NAMES.get('timestamp') in cell.columns:
-         first_ts = cell[COLUMN_NAMES['timestamp']].iloc[0]
-         ts = pd.to_datetime(first_ts, unit='s', errors='coerce')
-     if ts is not None and not pd.isna(ts):
-         feats['meta_hour_of_day'] = int(ts.hour)
-         feats['meta_day_of_week'] = int(ts.dayofweek)  # Monday=0
-         # define peak hours (example: 16–18 as peak)
-         feats['meta_is_peak_hour'] = 1 if ts.hour in [16, 17, 18] else 0
+    ts = None
+    if 'window_start_time' in metadata:
+        ts = pd.to_datetime(metadata['window_start_time'], unit='s', errors='coerce')
+    elif not cell.empty and COLUMN_NAMES.get('timestamp') in cell.columns:
+        first_ts = cell[COLUMN_NAMES['timestamp']].iloc[0]
+        ts = pd.to_datetime(first_ts, unit='s', errors='coerce')
+    if ts is not None and not pd.isna(ts):
+        feats['meta_hour_of_day'] = int(ts.hour)
+        feats['meta_day_of_week'] = int(ts.dayofweek)  # Monday=0
     # Copy top‐level metadata values (primitives) with a prefix
     for key, val in metadata.items():
         if isinstance(val, (int, float, str)):
