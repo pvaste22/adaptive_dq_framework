@@ -279,6 +279,17 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     ue = window_data.get('ue_data', pd.DataFrame())
     metadata = window_data.get('metadata', {}) or {}
     feats: Dict[str, Any] = {}
+         ts = None
+     if 'window_start_time' in metadata:
+         ts = pd.to_datetime(metadata['window_start_time'], unit='s', errors='coerce')
+     elif not cell.empty and COLUMN_NAMES.get('timestamp') in cell.columns:
+         first_ts = cell[COLUMN_NAMES['timestamp']].iloc[0]
+         ts = pd.to_datetime(first_ts, unit='s', errors='coerce')
+     if ts is not None and not pd.isna(ts):
+         feats['meta_hour_of_day'] = int(ts.hour)
+         feats['meta_day_of_week'] = int(ts.dayofweek)  # Monday=0
+         # define peak hours (example: 16–18 as peak)
+         feats['meta_is_peak_hour'] = 1 if ts.hour in [16, 17, 18] else 0
     # Copy top‐level metadata values (primitives) with a prefix
     for key, val in metadata.items():
         if isinstance(val, (int, float, str)):
@@ -296,17 +307,7 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
 
     feats.update(_time_cadence_features(cell, 'cell', meas_sec))
     feats.update(_time_cadence_features(ue, 'ue', meas_sec))
-     ts = None
-     if 'window_start_time' in metadata:
-         ts = pd.to_datetime(metadata['window_start_time'], unit='s', errors='coerce')
-     elif not cell.empty and COLUMN_NAMES.get('timestamp') in cell.columns:
-         first_ts = cell[COLUMN_NAMES['timestamp']].iloc[0]
-         ts = pd.to_datetime(first_ts, unit='s', errors='coerce')
-     if ts is not None and not pd.isna(ts):
-         feats['meta_hour_of_day'] = int(ts.hour)
-         feats['meta_day_of_week'] = int(ts.dayofweek)  # Monday=0
-         # define peak hours (example: 16–18 as peak)
-         feats['meta_is_peak_hour'] = 1 if ts.hour in [16, 17, 18] else 0
+
     #completeness features
     feats.update(_null_density(cell, 'cell'))
     feats.update(_null_density(ue, 'ue'))
