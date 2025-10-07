@@ -21,8 +21,10 @@ class PCAConsolidator:
     def __init__(self) -> None:
         self.mean_: Optional[np.ndarray] = None
         self.std_: Optional[np.ndarray] = None
-        self.eigvec_: Optional[np.ndarray] = None
+        self.pc1_: Optional[np.ndarray] = None
         self.columns_: Optional[List[str]] = None
+        self.pc1_min_: Optional[float] = None
+        self.pc1_max_: Optional[float] = None
 
     def fit(self, df: pd.DataFrame) -> 'PCAConsolidator':
         """Learn normalisation parameters and principal component.
@@ -58,10 +60,14 @@ class PCAConsolidator:
         # Compute covariance matrix of standardised data (rowvar=False => columns are variables)
         cov = np.cov(X_std, rowvar=False)
         # Compute eigenvalues and eigenvectors
-        eigvals, eigvecs = np.linalg.eig(cov)
+        eigvals, eigvecs = np.linalg.eigh(cov)
         # Sort eigenvectors by descending eigenvalue
-        idx = np.argsort(eigvals)[::-1]
-        self.eigvec_ = eigvecs[:, idx[0]].real  # first principal component (real part)
+        idx = np.argsort(eigvals)[::-1]  
+        eigvecs = eigvecs[:, idx]  
+        self.pc1_ = eigvecs[:, 0] # first principal component (real part)
+        pc1_scores = X_std @ self.pc1_
+        self.pc1_min_ = float(pc1_scores.min())
+        self.pc1_max_ = float(pc1_scores.max())
         return self
 
     def transform(self, df: pd.DataFrame) -> np.ndarray:
@@ -77,62 +83,45 @@ class PCAConsolidator:
         numpy.ndarray
             One‐dimensional array of normalised PC1 scores on [0, 1].
         """
-        if self.mean_ is None or self.std_ is None or self.eigvec_ is None or self.columns_ is None:
+        if any(v is None for v in [self.mean_, self.std_, self.pc1_, self.columns_, self.pc1_min_, self.pc1_max_]):
             raise RuntimeError("PCAConsolidator has not been fitted")
         # Select and reorder columns to match training
-        X_raw = df[self.columns_].copy()
-        X_raw = X_raw.fillna(X_raw.mean())
+        X_raw = df.reindex(columns=self.columns_)
+        impute_means = pd.Series(self.mean_, index=self.columns_)
+        X_raw = X_raw.fillna(impute_means)
         X = X_raw.to_numpy(dtype=float)
         std_safe = np.where(self.std_ == 0, 1.0, self.std_)
         X_std = (X - self.mean_) / std_safe
         # Project onto principal component
-        scores = X_std.dot(self.eigvec_)
         # Normalise scores to [0, 1]
-        min_val = np.min(scores)
-        max_val = np.max(scores)
-        if max_val - min_val > 0:
-            normalised = (scores - min_val) / (max_val - min_val)
+        pc1_scores = X_std @ self.pc1_
+        den = (self.pc1_max_ - self.pc1_min_)
+        if den == 0:
+            z = np.zeros_like(pc1_scores)     # all same, avoid div-by-zero
         else:
-            normalised = np.zeros_like(scores)
-        return normalised
+            z = (pc1_scores - self.pc1_min_) / den
+        return z
+        #return normalised
 
-    def to_dict(self) -> Dict[str, object]:
-        """Serialise consolidator parameters to a dictionary.
-
-        Returns
-        -------
-        dict
-            Dictionary with keys ``mean``, ``std``, ``eigvec`` and
-            ``columns``. Values are lists of floats.
-        """
-        if self.mean_ is None or self.std_ is None or self.eigvec_ is None or self.columns_ is None:
-            raise RuntimeError("PCAConsolidator has not been fitted")
+    def to_dict(self) -> dict:
         return {
-            'mean': self.mean_.tolist(),
-            'std': self.std_.tolist(),
-            'eigvec': self.eigvec_.tolist(),
-            'columns': self.columns_,
+            "columns": self.columns_,
+            "mean": self.mean_.tolist(),
+            "std": self.std_.tolist(),
+            "pc1": self.pc1_.tolist(),
+            "pc1_min": self.pc1_min_,
+            "pc1_max": self.pc1_max_,
         }
 
     @classmethod
-    def from_dict(cls, params: Dict[str, object]) -> 'PCAConsolidator':
-        """Reconstruct a PCAConsolidator from a serialised dictionary.
-
-        Parameters
-        ----------
-        params: dict
-            Dictionary produced by :meth:`to_dict`.
-
-        Returns
-        -------
-        PCAConsolidator
-            New instance with parameters loaded.
-        """
+    def from_dict(cls, d: dict) -> "PCAConsolidator":
         obj = cls()
-        obj.mean_ = np.array(params['mean'], dtype=float)
-        obj.std_ = np.array(params['std'], dtype=float)
-        obj.eigvec_ = np.array(params['eigvec'], dtype=float)
-        obj.columns_ = list(params['columns'])
+        obj.columns_  = list(d["columns"])
+        obj.mean_     = np.array(d["mean"], dtype=float)
+        obj.std_      = np.array(d["std"], dtype=float)
+        obj.pc1_      = np.array(d["pc1"], dtype=float)
+        obj.pc1_min_  = float(d["pc1_min"])
+        obj.pc1_max_  = float(d["pc1_max"])
         return obj
 
 

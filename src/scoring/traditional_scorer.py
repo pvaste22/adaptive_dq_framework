@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, Optional, Any
 
 import pandas as pd
 
@@ -161,61 +161,51 @@ def score_window(window_path: Path,
     return results
 
 
-def score_windows_in_directory(directory: Path,
-                              dimensions: Optional[Iterable] = None,
-                              baselines: Optional[Dict] = None) -> Dict[str, Dict[str, Dict]]:
-    """Score all windows in a given directory.
-
-    Parameters
-    ----------
-    directory: Path
-        Path to a directory containing multiple window subdirectories.
-        Each subdirectory will be scored individually. Only
-        subdirectories that contain ``cell_data.parquet`` or
-        ``ue_data.parquet`` will be processed; other files are
-        ignored.
-    dimensions: Optional[Iterable]
-        As in :func:`score_window`, an iterable of dimension
-        calculator instances to use. If omitted, a fresh list will be
-        created for every window.
-    baselines: Optional[Dict]
-        Baseline overrides to pass to each dimension.
-
-    Returns
-    -------
-    Dict[str, Dict[str, Dict]]
-        A dictionary keyed by ``window_id`` (if available) or the
-        directory name otherwise. Each entry contains the per‐dimension
-        scoring result for that window. Errors during scoring are
-        captured in the corresponding entry's dimension results.
-    """
-    results: Dict[str, Dict[str, Dict]] = {}
+def score_windows_in_directory(
+    directory: Path,
+    dimensions: Optional[Iterable] = None,
+    baselines: Optional[Dict] = None
+) -> Dict[str, Dict[str, Any]]:
+    """Score all windows in a given directory and also return their paths."""
+    results: Dict[str, Dict[str, Any]] = {}
     if not directory.is_dir():
         raise ValueError(f"{directory} is not a directory")
 
     for path in sorted(directory.iterdir()):
         if not path.is_dir():
             continue
-        # Heuristically check that the subdirectory contains window data
-        cell_file = path / 'cell_data.parquet'
-        ue_file = path / 'ue_data.parquet'
+
+        cell_file = path / "cell_data.parquet"
+        ue_file  = path / "ue_data.parquet"
         if not (cell_file.exists() or ue_file.exists()):
             continue
-        # Determine an identifier for the window
-        meta_file = path / 'metadata.json'
+
+        # Load metadata to get window_id; fallback to folder name
+        meta: Dict[str, Any] = {}
+        meta_file = path / "metadata.json"
         if meta_file.exists():
             try:
-                with open(meta_file, 'r', encoding='utf-8') as fh:
-                    meta = json.load(fh)
-                window_id = meta.get('window_id', path.name)
+                with open(meta_file, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh) or {}
             except Exception:
-                window_id = path.name
-        else:
-            window_id = path.name
-        # Score the window. Always create fresh dimension instances if none provided.
+                meta = {}
+        window_id = meta.get("window_id", path.name)
+
+        # Fresh dimensions per window unless provided
         dims_to_use = dimensions if dimensions is not None else _default_dimensions()
-        results[window_id] = score_window(path, dims_to_use, baselines)
+
+        # Score this window (existing logic)
+        dim_results = score_window(path, dims_to_use, baselines)
+
+        # Return payload includes path + result + metadata
+        results[window_id] = {
+            "path": str(path),
+            "result": dim_results,
+            "metadata": meta,
+        }
+
     return results
+
 
 
 __all__ = [

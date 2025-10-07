@@ -1,60 +1,47 @@
-
 import pandas as pd
 from pathlib import Path
-import sys
-import types
+from scoring.traditional_scorer import score_window, score_windows_in_directory
+from training.label_generator import generate_labeled_dataset
 
-
-
-
+WINDOWS_DIR = Path("./data/processed/sample_windows")
+OUTPUT_DIR  = Path("./data/processed/sample_windows/labelled")
 
 def main() -> None:
-    """Execute a simple end-to-end test of the scoring pipeline."""
-    # ---------------------------------------------------------------------
-
-
-
-    from scoring.traditional_scorer import score_window, score_windows_in_directory
-    from training.label_generator import generate_labeled_dataset
-
-    # Directory containing synthetic test windows
-    windows_dir = Path('data/processed/training/v0/windows')
+    windows_dir = WINDOWS_DIR
     if not windows_dir.exists():
         raise FileNotFoundError(f"Expected directory {windows_dir} not found."
                                 " Run this script from the project root.")
 
-    # Score each window individually
-    print("\nScoring individual windows:\n" + "-" * 40)
+    """print("\nScoring individual windows:\n" + "-" * 40)
     for window_path in sorted(windows_dir.iterdir()):
         if window_path.is_dir():
             scores = score_window(window_path)
             print(f"Window {window_path.name} scores:")
             for dim_name, res in scores.items():
-                print(f"  {dim_name}: score={res.get('score'):.4f}, "
-                      f"apr={res.get('apr'):.4f}, "
-                      f"coverage={res.get('coverage'):.4f}")
-            print()
+                s  = res.get('score', res.get('mpr', 0.0))
+                ap = res.get('apr', 0.0)
+                cv = res.get('coverage', res.get('coverage_ratio', 0.0))
+                print(f"  {dim_name}: score={s:.4f}, apr={ap:.4f}, coverage={cv:.4f}")
+            print()"""
 
-    # Score all windows at once
     print("\nScoring all windows in directory:\n" + "-" * 40)
-    all_scores = score_windows_in_directory(windows_dir)
-    for wid, metrics in all_scores.items():
+    all_scores = score_windows_in_directory(windows_dir)  # <-- fixed
+    for wid, payload in all_scores.items():
         print(f"Window {wid} summary:")
-        for dim_name, res in metrics.items():
-            print(f"  {dim_name}: score={res.get('score'):.4f}, "
-                  f"apr={res.get('apr'):.4f}, coverage={res.get('coverage'):.4f}")
+        for dim_name, res in payload["result"].items():
+            s  = res.get('score', res.get('mpr', 0.0))
+            ap = res.get('apr', 0.0)
+            cv = res.get('coverage', res.get('coverage_ratio', 0.0))
+            print(f"  {dim_name}: score={s:.4f}, apr={ap:.4f}, coverage={cv:.4f}")
         print()
 
-    # Generate labelled dataset (features + PCA label)
-    output_dir = Path('test_output')
-    print("\nGenerating labelled dataset...", end=' ', flush=True)
-    dataset = generate_labeled_dataset(windows_dir, output_dir)
+    print("\nGenerating labelled dataset...\n", end=' ', flush=True)
+    dataset = generate_labeled_dataset(windows_dir, OUTPUT_DIR)  # use constants
     print("done.")
     print("\nFirst few rows of the labelled dataset:\n" + "-" * 40)
     print(dataset.head())
     print("\nLabel distribution: min={:.4f}, max={:.4f}".format(
-        dataset['label'].min(), dataset['label'].max()))
-
+        float(dataset['label'].min()), float(dataset['label'].max())))
 
 if __name__ == '__main__':
     main()

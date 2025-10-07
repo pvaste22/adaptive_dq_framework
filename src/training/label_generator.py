@@ -12,24 +12,35 @@ from scoring.traditional_scorer import (
     load_window_from_disk,
 )
 from scoring.pca_consolidator import PCAConsolidator
-from data_processing.feature_extractor import make_feature_row
+from data_processing.feature_extractor import make_feature_row, load_feature_schema, save_feature_schema
 
 
-def _flatten_dimension_results(dim_results: Dict[str, Dict]) -> Dict[str, float]:
+def _next_versioned_path(base: Path) -> Path:
+    if not base.exists():
+        return base
+    stem, suf = base.stem, base.suffix  # e.g., 'labeled_data', '.parquet'
+    for i in range(1, 1000):
+        cand = base.with_name(f"{stem}_v{i:03d}{suf}")
+        if not cand.exists():
+            return cand
+    raise RuntimeError("Too many versions")
+
+
+def _flatten_dimension_results(dim_results: dict) -> dict:
     """Flatten per‐dimension metrics into a flat dict.
 
     Only APR and MPR (score) values are included. Additional entries
     can be added here if required for training.
     """
-    row: Dict[str, float] = {}
-    for dim_name, res in dim_results.items():
-        # Use MPR as the primary score; APR is also included
-        # MPR is stored under key 'score' in dimension results
-        mpr = float(res.get('score', 0.0))
-        apr = float(res.get('apr', 0.0))
-        row[f'{dim_name}_mpr'] = mpr
-        row[f'{dim_name}_apr'] = apr
-    return row
+    flat = {}
+    for dim, res in dim_results.items():
+        val = res.get("mpr", res.get("score"))
+        try:
+            flat[f"{dim}_mpr"] = float(val) if val is not None else float("nan")
+        except Exception:
+            flat[f"{dim}_mpr"] = float("nan")
+    return flat
+
 
 
 def generate_labeled_dataset(windows_dir: Path, output_dir: Path) -> pd.DataFrame:
@@ -57,12 +68,21 @@ def generate_labeled_dataset(windows_dir: Path, output_dir: Path) -> pd.DataFram
     scored = score_windows_in_directory(windows_dir)
     if not scored:
         raise RuntimeError(f"No windows scored in {windows_dir}")
+
     window_ids: List[str] = list(scored.keys())
-    # Step 2: build DataFrame of per‐dimension metrics
+
+    # step 2: Build per-dimension metric rows in the same order
     dim_rows: List[Dict[str, float]] = []
+    paths: List[Path] = []
     for wid in window_ids:
-        dim_rows.append(_flatten_dimension_results(scored[wid]))
+        payload = scored[wid]
+        paths.append(Path(payload["path"]))                 # use scorer-returned path
+        dim_rows.append(_flatten_dimension_results(payload["result"]))
+
     dim_df = pd.DataFrame(dim_rows, index=window_ids)
+    if dim_df.isna().all(axis=None):
+        raise ValueError("All flattened MPR values are NaN/non-numeric. "
+                     "Check that dimensions return numeric 'mpr'/'score'.")
     # Step 3: fit PCA consolidator and compute labels
     consolidator = PCAConsolidator()
     consolidator.fit(dim_df)
@@ -74,15 +94,25 @@ def generate_labeled_dataset(windows_dir: Path, output_dir: Path) -> pd.DataFram
     # Step 4: compute feature vectors and attach labels
     feature_rows: List[Dict[str, float]] = []
     for idx, wid in enumerate(window_ids):
-        window_path = windows_dir / wid
-        window_data = load_window_from_disk(window_path)
+        window_data = load_window_from_disk(paths[idx])     # use returned path
         feat_row = make_feature_row(window_data)
-        feat_row['label'] = float(labels[idx])
-        feat_row['window_id'] = wid
+        feat_row["label"] = float(labels[idx])
+        feat_row["window_id"] = wid
         feature_rows.append(feat_row)
     dataset = pd.DataFrame(feature_rows)
+    schema = load_feature_schema()
+    if not schema:
+        # first run → lock current order (or sorted(dataset.columns))
+        schema = list(dataset.columns)
+        save_feature_schema(schema)
+
+    # enforce same order every run
+    dataset = dataset.reindex(columns=schema)
     # Write to disk
-    dataset.to_parquet(output_dir / 'labeled_data.parquet', index=False)
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    target = _next_versioned_path(out_dir / "labeled_data.parquet")
+    dataset.to_parquet(target, index=False)
     return dataset
 
 

@@ -5,17 +5,23 @@ from typing import Dict, Any, Iterable
 
 import pandas as pd
 import numpy as np
+from pathlib import Path
+import json
 
 # Import column name definitions if available. Fallback to sensible defaults
 try:
-    from common.constants import COLUMN_NAMES
+    from common.constants import COLUMN_NAMES, REQUIRED_DIRS
+    feats_dir = Path(REQUIRED_DIRS.get('artifacts', './artifacts'))
 except ImportError:
     COLUMN_NAMES = {
         'timestamp': 'timestamp',
         'cell_entity': 'cell_entity',
         'ue_entity': 'ue_entity',
     }
+    feats_dir = Path('./artifacts')
 
+
+FEATURES_SCHEMA_PATH = feats_dir / "features" / "features_schema.json"
 
 def _basic_counts(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
     """Compute simple row and entity counts.
@@ -39,10 +45,21 @@ def _basic_counts(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
     # Unique entity counts
     cell_ent = COLUMN_NAMES.get('cell_entity', 'cell_entity')
     ue_ent = COLUMN_NAMES.get('ue_entity', 'ue_entity')
+
     feats['unique_cells'] = int(cell[cell_ent].nunique()) if not cell.empty and cell_ent in cell.columns else 0
     feats['unique_ues'] = int(ue[ue_ent].nunique()) if not ue.empty and ue_ent in ue.columns else 0
     return feats
 
+def save_feature_schema(columns):
+    FEATURES_SCHEMA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(FEATURES_SCHEMA_PATH, "w", encoding="utf-8") as f:
+        json.dump({"columns": list(columns)}, f, indent=2)
+
+def load_feature_schema():
+    if FEATURES_SCHEMA_PATH.exists():
+        with open(FEATURES_SCHEMA_PATH, "r", encoding="utf-8") as f:
+            return json.load(f).get("columns", [])
+    return []        
 
 def _duplicate_counts(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
     """Count duplicate entity/timestamp combinations.
