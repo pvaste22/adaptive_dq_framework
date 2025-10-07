@@ -40,14 +40,14 @@ class DataLoader:
         ue_data = self._load_ue_reports()
         
         # Apply necessary data corrections (not quality assessment)
-        cell_data = self._correct_cell_data(cell_data)
+        #cell_data = self._correct_cell_data(cell_data)
         #ue_data = self._correct_ue_data(ue_data)
         
         self.logger.info(f"Loaded {len(cell_data)} cell records, {len(ue_data)} UE records")
         
         # Log correction statistics
-        if 'cqi_correction_stats' in ue_data.attrs:
-            self.logger.info(f"UE CQI corrections: {ue_data.attrs['cqi_correction_stats']}")
+        #if 'cqi_correction_stats' in ue_data.attrs:
+           #self.logger.info(f"UE CQI corrections: {ue_data.attrs['cqi_correction_stats']}")
         
         return cell_data, ue_data
     
@@ -84,12 +84,12 @@ class DataLoader:
         
         return df
     
-    def _correct_cell_data(self, df: pd.DataFrame) -> pd.DataFrame:
+    #def _correct_cell_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Apply necessary data corrections for cell data.
         Only corrections, not quality assessment.
         """
-        df = df.copy()
+        """df = df.copy()
         
         # Extract band information - required for framework operations
         if 'Band' not in df.columns and self.column_names['cell_entity'] in df.columns:
@@ -99,7 +99,7 @@ class DataLoader:
             self.logger.info(f"Extracted band information: {df['Band'].value_counts().to_dict()}")
         
         
-        return df
+        return df"""
     
     #def _correct_ue_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -136,9 +136,9 @@ class DataLoader:
         """
         summary = {
             'cell_data': self._summarize_dataframe(cell_data, 'cell'),
-            'ue_data': self._summarize_dataframe(ue_data, 'ue'),
+            'ue_data': self._summarize_dataframe(ue_data, 'ue')
             #'data_alignment': self._check_data_alignment(cell_data, ue_data),
-            'corrections_applied': self._summarize_corrections(cell_data, ue_data)
+            #'corrections_applied': self._summarize_corrections(cell_data, ue_data)
         }
         
         return summary
@@ -162,7 +162,7 @@ class DataLoader:
                 summary['expected_entities'] = self.expected_entities.get('cells', 52)
             else:
                 summary['expected_entities'] = self.expected_entities.get('ues', 48)
-            summary['entity_completeness'] = summary['unique_entities'] / summary['expected_entities']
+            #summary['entity_completeness'] = summary['unique_entities'] / summary['expected_entities']
         
         # Timestamp statistics
         if 'timestamp' in df.columns:
@@ -180,41 +180,8 @@ class DataLoader:
                 expected_interval = pd.Timedelta(seconds=MEAS_INTERVAL_SEC)
                 summary['consistent_intervals'] = all(abs(i - expected_interval) < pd.Timedelta(seconds=5) for i in intervals)
         
-        # Band statistics (for cell data)
-        if 'Band' in df.columns:
-            summary['bands_present'] = sorted(df['Band'].dropna().unique().tolist())
-            summary['band_distribution'] = df['Band'].value_counts().to_dict()
-        
-        # Missing value analysis
-        missing_counts = df.isnull().sum()
-        summary['missing_values'] = {
-            'total_missing': int(missing_counts.sum()),
-            'columns_with_missing': missing_counts[missing_counts > 0].to_dict(),
-            'complete_columns': list(missing_counts[missing_counts == 0].index)
-        }
         
         return summary
     
     
-    def _summarize_corrections(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict:
-        """Summarize data corrections that were applied."""
-        corrections = {
-            'cqi_corrections': {},
-            'band_extraction': {},
-            'timestamp_conversion': True
-        }
-        
-        # CQI corrections from UE data only
-        if hasattr(ue_data, 'attrs') and 'cqi_correction_stats' in ue_data.attrs:
-            corrections['cqi_corrections']['ue'] = ue_data.attrs['cqi_correction_stats']
-        
-        # Band extraction from cell data
-        if 'Band' in cell_data.columns:
-            corrections['band_extraction'] = {
-                'applied': True,
-                'bands_found': list(cell_data['Band'].dropna().unique())
-            }
-        else:
-            corrections['band_extraction']['applied'] = False
-        
-        return corrections
+    

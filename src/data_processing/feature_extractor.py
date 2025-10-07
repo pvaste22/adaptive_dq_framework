@@ -124,6 +124,118 @@ def _numeric_stats(df: pd.DataFrame, prefix: str) -> Dict[str, Any]:
         feats[f"{key_base}_q75"] = float(series.quantile(0.75))
     return feats
 
+def _energy_consistency(cell: pd.DataFrame) -> Dict[str, Any]:
+    feats: Dict[str, Any] = {}
+    if cell is None or cell.empty:
+        return feats
+    ts_col = COLUMN_NAMES.get('timestamp', 'timestamp')
+    if not {'PEE.AvgPower', 'PEE.Energy'}.issubset(set(cell.columns)) or ts_col not in cell.columns:
+        return feats
+    df = cell[[ts_col, 'PEE.AvgPower', 'PEE.Energy']].copy()
+    df[ts_col] = pd.to_datetime(df[ts_col], errors='coerce')
+    df = df.dropna(subset=[ts_col]).sort_values(ts_col)
+    if df.empty:
+        return feats
+    dt = df[ts_col].diff().dt.total_seconds()
+    e  = pd.to_numeric(df['PEE.Energy'], errors='coerce')
+    p  = pd.to_numeric(df['PEE.AvgPower'], errors='coerce')
+    de = e.diff()
+    pred = p.shift(1) * dt  # power at previous step times delta t
+    resid = (de - pred).replace([np.inf, -np.inf], np.nan).dropna()
+    if resid.empty:
+        return feats
+    feats['cell_energy_resid_abs_mean'] = float(resid.abs().mean())
+    feats['cell_energy_resid_abs_q75']  = float(resid.abs().quantile(0.75))
+    return feats
+
+def _ratio_features(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, Any]:
+    feats: Dict[str, Any] = {}
+    # Cell PRB utilization if available: Used / Tot (DL/UL)
+    if cell is not None and not cell.empty:
+        def safe_ratio(a, b):
+            s = pd.to_numeric(cell.get(a), errors='coerce')
+            t = pd.to_numeric(cell.get(b), errors='coerce')
+            r = s / t
+            return r.replace([np.inf, -np.inf], np.nan).dropna()
+
+        for dl_ul in ('Dl', 'Ul'):
+            used = f'RRU.PrbUsed{dl_ul}'
+            tot  = f'RRU.PrbTot{dl_ul}'
+            if used in cell.columns and tot in cell.columns:
+                r = safe_ratio(used, tot)
+                if not r.empty:
+                    feats[f'cell_prb_util_{dl_ul.lower()}_mean'] = float(r.mean())
+                    feats[f'cell_prb_util_{dl_ul.lower()}_q25']  = float(r.quantile(0.25))
+                    feats[f'cell_prb_util_{dl_ul.lower()}_q75']  = float(r.quantile(0.75))
+
+    # UE throughput per PRB (needs UE PRB used & UE THP)
+    if ue is not None and not ue.empty:
+        for dl_ul in ('Dl', 'Ul'):
+            thp = f'DRB.UEThp{dl_ul}'
+            prb = f'RRU.PrbUsed{dl_ul}'
+            if thp in ue.columns and prb in ue.columns:
+                t = pd.to_numeric(ue[thp], errors='coerce')
+                p = pd.to_numeric(ue[prb], errors='coerce')
+                r = t / p
+                r = r.replace([np.inf, -np.inf], np.nan).dropna()
+                if not r.empty:
+                    feats[f'ue_thp_per_prb_{dl_ul.lower()}_mean'] = float(r.mean())
+                    feats[f'ue_thp_per_prb_{dl_ul.lower()}_q25']  = float(r.quantile(0.25))
+                    feats[f'ue_thp_per_prb_{dl_ul.lower()}_q75']  = float(r.quantile(0.75))
+    return feats
+
+def _null_density(df: pd.DataFrame, prefix: str) -> Dict[str, Any]:
+    feats: Dict[str, Any] = {}
+    if df is None or df.empty:
+        return feats
+    num = df.select_dtypes(include=[np.number])
+    if num.empty:
+        return feats
+    null_frac = num.isna().mean().mean()  # overall numeric null fraction
+    feats[f'{prefix}_null_frac'] = float(null_frac)
+    return feats
+
+def _time_cadence_features(df: pd.DataFrame, prefix: str, meas_sec: int | None) -> Dict[str, Any]:
+    feats: Dict[str, Any] = {}
+    if df is None or df.empty:
+        return feats
+    ts_col = COLUMN_NAMES.get('timestamp', 'timestamp')
+    if ts_col not in df.columns:
+        return feats
+
+    ts = pd.to_datetime(df[ts_col], errors='coerce').dropna().sort_values()
+    if ts.empty:
+        return feats
+
+    deltas = ts.diff().dropna().dt.total_seconds()
+    if deltas.empty:
+        return feats
+
+    feats[f'{prefix}_dt_min'] = float(deltas.min())
+    feats[f'{prefix}_dt_median'] = float(deltas.median())
+    feats[f'{prefix}_dt_max'] = float(deltas.max())
+
+    # expected interval
+    expected = meas_sec if meas_sec else int(deltas.median())
+    if expected <= 0:
+        expected = int(deltas.median())
+
+    # off-grid: not multiples of expected (within 10% slack)
+    tol = max(1, int(0.1 * expected))
+    off_grid = (~((deltas % expected).abs() <= tol) & ~(((expected - (deltas % expected)) % expected) <= tol)).sum()
+    feats[f'{prefix}_offgrid_count'] = int(off_grid)
+
+    # missing intervals (gaps) estimate
+    missing = ((deltas // expected) - 1).clip(lower=0).sum()
+    feats[f'{prefix}_missing_intervals'] = int(missing)
+
+    # coverage ratio vs theoretical
+    span = (ts.max() - ts.min()).total_seconds()
+    theoretical = int(span // expected) + 1
+    observed = len(ts)
+    feats[f'{prefix}_coverage_ratio'] = float(observed / theoretical) if theoretical > 0 else 1.0
+    return feats
+
 
 def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     """Generate a flattened feature representation for a single window.
@@ -156,10 +268,27 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     # Basic structural counts
     feats.update(_basic_counts(cell, ue))
     feats.update(_duplicate_counts(cell, ue))
+    #timeliness cadence features
+    meas_sec = None
+    try:
+        from common.constants import MEAS_INTERVAL_SEC
+        meas_sec = int(MEAS_INTERVAL_SEC)
+    except Exception:
+        pass
+
+    feats.update(_time_cadence_features(cell, 'cell', meas_sec))
+    feats.update(_time_cadence_features(ue, 'ue', meas_sec))
+    #completeness features
+    feats.update(_null_density(cell, 'cell'))
+    feats.update(_null_density(ue, 'ue'))
+
+    #Ratio features tied to Validity/Accuracy
+    feats.update(_ratio_features(cell, ue))
+    # consistency energy-power feature
+    feats.update(_energy_consistency(cell))
     # Numeric summaries
     feats.update(_numeric_stats(cell, 'cell'))
     feats.update(_numeric_stats(ue, 'ue'))
     return feats
-
 
 __all__ = ['make_feature_row']
