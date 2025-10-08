@@ -44,6 +44,9 @@ class AccuracyDimension(BaseDimension):
         self.se_ul_p99        = se_info.get('ul_p99', None)
         self.se_abs_cap_glob  = float(se_info.get('abs_cap_global', 30.0))
         self.se_abs_cap_byband= se_info.get('abs_cap_by_band', None)  # optional; not required
+        self.se_dl_p99_byband = se_info.get('dl_p99_by_band', {})
+        self.se_ul_p99_byband = se_info.get('ul_p99_by_band', {})
+
 
         self.logger.info("Accuracy initiated")
 
@@ -173,12 +176,19 @@ class AccuracyDimension(BaseDimension):
         band_cap   = band_series.map(band_to_cap).fillna(float(self.se_abs_cap_glob)).astype(float)
 
         # p99-based soft cap (same for all rows; keep original behavior)
-        p99_dl_cap = float('inf')
-        if getattr(self, 'se_dl_p99', None):
-            p99_dl_cap = 1.2 * float(self.se_dl_p99)
-        p99_ul_cap = float('inf')
-        if getattr(self, 'se_ul_p99', None):
-            p99_ul_cap = 1.2 * float(self.se_ul_p99)
+        # per-row p99 (band-specific if available), then 1.2×p99
+        p99_dl_byband_map = {k: float(v) for k, v in (self.se_dl_p99_byband or {}).items()}
+        p99_ul_byband_map = {k: float(v) for k, v in (self.se_ul_p99_byband or {}).items()}
+
+        p99_dl_row = band_series.map(p99_dl_byband_map)
+        p99_ul_row = band_series.map(p99_ul_byband_map)
+
+        # fall back to global p99 (or +inf if not available)
+        p99_dl_row = p99_dl_row.fillna(float(self.se_dl_p99) if self.se_dl_p99 is not None else np.inf).astype(float)
+        p99_ul_row = p99_ul_row.fillna(float(self.se_ul_p99) if self.se_ul_p99 is not None else np.inf).astype(float)
+
+        p99_dl_cap_series = 1.2 * p99_dl_row
+        p99_ul_cap_series = 1.2 * p99_ul_row
 
         # --- Downlink ---
         thp_dl   = pd.to_numeric(df[self.thp_dl_col], errors='coerce')              # Gbps
@@ -190,7 +200,7 @@ class AccuracyDimension(BaseDimension):
         se_dl.loc[valid_dl] = (thp_dl.loc[valid_dl] * 1e9) / denom_hz_dl.loc[valid_dl].replace(0, np.nan)
         se_dl = se_dl.replace([np.inf, -np.inf], np.nan)
 
-        cap_row_dl = np.minimum(band_cap, p99_dl_cap)  # per-row: min(band cap, 1.2×p99)
+        cap_row_dl = np.minimum(band_cap, p99_dl_cap_series) # per-row: min(band cap, 1.2×p99)
         ok_dl = (se_dl <= cap_row_dl).astype('float')
         ok_dl[se_dl.isna() | cap_row_dl.isna()] = np.nan
 
@@ -203,7 +213,7 @@ class AccuracyDimension(BaseDimension):
         se_ul.loc[valid_ul] = (thp_ul.loc[valid_ul] * 1e9) / denom_hz_ul.loc[valid_ul].replace(0, np.nan)
         se_ul = se_ul.replace([np.inf, -np.inf], np.nan)
 
-        cap_row_ul = np.minimum(band_cap, p99_ul_cap)
+        cap_row_ul = np.minimum(band_cap, p99_ul_cap_series)
         ok_ul = (se_ul <= cap_row_ul).astype('float')
         ok_ul[se_ul.isna() | cap_row_ul.isna()] = np.nan
 

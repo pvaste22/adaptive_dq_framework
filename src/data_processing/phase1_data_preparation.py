@@ -31,7 +31,7 @@ from data_processing.data_loader import DataLoader
 from data_processing.unit_converter import UnitConverter
 from data_processing.window_generator import WindowGenerator
 from common.logger import get_phase1_logger
-from common.constants import PATHS, VERSIONING, COLUMN_NAMES, EXPECTED_ENTITIES
+from common.constants import PATHS, VERSIONING, COLUMN_NAMES, EXPECTED_ENTITIES, PATTERNS, BAND_SPECS
 
 
 class Phase1Orchestrator:
@@ -212,7 +212,7 @@ class Phase1Orchestrator:
         
         #Save all windows to disk
         window_dir = self.paths['training']/'windows'
-        self.window_generator.save_all_windows(windows, window_dir)
+        #self.window_generator.save_all_windows(windows, window_dir)
 
         # Store window statistics
         self.artifacts['window_statistics'] = window_stats
@@ -978,40 +978,84 @@ class Phase1Orchestrator:
             need = {thp_col, prb_col}.issubset(df.columns) and not df.empty
             if not need: return None
             thp = pd.to_numeric(df[thp_col], errors='coerce')          # Gbps
-            prb = pd.to_numeric(df[prb_col], errors='coerce').clip(lower=1)
-            s = (thp*1000.0) / prb.replace(0, np.nan) # Gbps → Mbps; unit = Mbps/PRB
+            prb = pd.to_numeric(df[prb_col], errors='coerce')
+            # drop zero PRB rows instead of clipping (avoids skew)
+            mask = prb > 0
+            s = (thp[mask] * 1000.0) / prb[mask]  # Gbps → Mbps; unit = Mbps/PRB
             s = s.replace([np.inf, -np.inf], np.nan).dropna()
             if s.size < 30: return None
             q25, q50, q75 = np.percentile(s, [25, 50, 75])
             return {'q25': float(q25), 'q50': float(q50), 'q75': float(q75), 'n': int(s.size)}
 
+
         a1_dl = _eff_per_prb(cell_data, 'DRB.UEThpDl', 'RRU.PrbUsedDl')
         a1_ul = _eff_per_prb(cell_data, 'DRB.UEThpUl', 'RRU.PrbUsedUl')
         dq['accuracy_thp_per_prb_band'] = {'dl': a1_dl, 'ul': a1_ul}
 
-        # --- 8) Accuracy: Spectral efficiency stats (bps/Hz)
-        per_prb_khz = 180.0  # prefer config/constant; keep in baseline for Phase-2
+        # --- 8) Accuracy: Spectral efficiency stats (bps/Hz) using *used* PRBs per band
+        # (Ensure BAND_SPECS (and PATTERNS for fallback) is imported from common.constants at top)
+        band_to_prb_khz = {}
+        band_to_cap = {}
+        for band, spec in (BAND_SPECS or {}).items():
+            per_khz = spec.get('per_prb_khz')
+            if per_khz is None:
+                bw_mhz = spec.get('bandwidth_mhz'); prb_cnt = spec.get('prb_count')
+                if bw_mhz and prb_cnt:
+                    per_khz = (float(bw_mhz) * 1000.0) / float(prb_cnt)
+            if per_khz:
+                band_to_prb_khz[band] = float(per_khz)
+            cap = spec.get('spectral_efficiency_max')
+            if cap is not None:
+                band_to_cap[band] = float(cap)
 
-        def _se_p99(df, thp_col, avail_col):
-            need = {thp_col, avail_col}.issubset(df.columns) and not df.empty
-            if not need: return None
-            thp_gbps = pd.to_numeric(df[thp_col], errors='coerce')          # Gbps
-            avail    = pd.to_numeric(df[avail_col], errors='coerce')         # PRBs
-            denom_hz = (avail * per_prb_khz * 1e3)                          # per_prb_khz=180 → Hz
-            se = ((thp_gbps * 1e9) / denom_hz.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).dropna()
-            if se.size < 30: return None
-            return float(np.percentile(se, 99))
+        # Determine band for each cell row
+        if 'Band' in cell_data.columns:
+            band_series = cell_data['Band'].astype(str)
+        else:
+            band_series = cell_data[self.column_names.get('cell_entity', 'Viavi.Cell.Name')]\
+                          .astype(str).str.extract(PATTERNS['band_extractor'])[0]
 
-        a2_dl_p99 = _se_p99(cell_data, 'DRB.UEThpDl', 'RRU.PrbAvailDl')
-        a2_ul_p99 = _se_p99(cell_data, 'DRB.UEThpUl', 'RRU.PrbAvailUl')
+        perprb_khz_series = band_series.map(band_to_prb_khz).fillna(180.0).astype(float)  # default 180 kHz if unknown
+
+        # Compute spectral efficiency (SE) for DL and UL using *used* PRBs
+        thp_dl = pd.to_numeric(cell_data['DRB.UEThpDl'], errors='coerce')  # Gbps
+        used_dl = pd.to_numeric(cell_data['RRU.PrbUsedDl'], errors='coerce')
+        se_dl_series = ((thp_dl * 1e9) / (used_dl * (perprb_khz_series * 1e3)).replace(0, np.nan))\
+                        .replace([np.inf, -np.inf], np.nan).dropna()
+        thp_ul = pd.to_numeric(cell_data['DRB.UEThpUl'], errors='coerce')
+        used_ul = pd.to_numeric(cell_data['RRU.PrbUsedUl'], errors='coerce')
+        se_ul_series = ((thp_ul * 1e9) / (used_ul * (perprb_khz_series * 1e3)).replace(0, np.nan))\
+                        .replace([np.inf, -np.inf], np.nan).dropna()
+
+        # p99 of SE (global and per-band) for DL/UL
+        a2_dl_p99 = float(np.percentile(se_dl_series, 99)) if se_dl_series.size >= 30 else None
+        a2_ul_p99 = float(np.percentile(se_ul_series, 99)) if se_ul_series.size >= 30 else None
+        a2_dl_p99_by_band = {}
+        a2_ul_p99_by_band = {}
+        if 'Band' in cell_data.columns:
+            for band, subdf in cell_data.groupby('Band'):
+                sub_dl = se_dl_series[band_series == band]
+                sub_ul = se_ul_series[band_series == band]
+                if sub_dl.size >= 30:
+                    a2_dl_p99_by_band[band] = float(np.percentile(sub_dl, 99))
+                if sub_ul.size >= 30:
+                    a2_ul_p99_by_band[band] = float(np.percentile(sub_ul, 99))
+
+        # Absolute spectral-efficiency caps
+        abs_cap_global = 30.0
+        abs_cap_by_band = {band: float(cap) for band, cap in band_to_cap.items()}
+
 
         # absolute physics caps: global 
-        abs_cap_global = 30.0  
+        #abs_cap_global = 30.0  
         dq['accuracy_spectral_eff'] = {
-            'per_prb_khz': per_prb_khz,
+            'per_prb_khz': 180.0,  # default per-PRB bandwidth (for fallback)
             'dl_p99': a2_dl_p99,
             'ul_p99': a2_ul_p99,
-            'abs_cap_global': abs_cap_global,            
+            'abs_cap_global': abs_cap_global,
+            'abs_cap_by_band': abs_cap_by_band,
+            'dl_p99_by_band': a2_dl_p99_by_band,
+            'ul_p99_by_band': a2_ul_p99_by_band
         }
 
         # Metadata
