@@ -349,7 +349,7 @@ def inject_faults_inplace_by_windows(
     manifest = pd.DataFrame(manifest_rows).sort_values(["window_index","timestamp"])
     out.drop(columns=["dq_fault_flag","dq_fault_type","dq_fault_window"],
         errors="ignore", inplace=True)
-    out.drop(columns=["unit_conversion_version"], errors="ignore", inplace=True)
+    #out.drop(columns=["unit_conversion_version"], errors="ignore", inplace=True)
     return out, manifest
 
 
