@@ -180,8 +180,8 @@ class UnitConverter:
                 conversion_summary['cell_conversions'].append('qos_flow_semantics_flagged')
         
         # Add metadata
-        cell_data['unit_conversion_version'] = '1.0'
-        ue_data['unit_conversion_version'] = '1.0'
+        #cell_data['unit_conversion_version'] = '1.0'
+        #ue_data['unit_conversion_version'] = '1.0'
         
         # Store conversion summary as attributes for tracking
         cell_data.attrs['conversions_applied'] = conversion_summary['cell_conversions']

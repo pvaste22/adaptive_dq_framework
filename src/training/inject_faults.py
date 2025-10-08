@@ -2,9 +2,16 @@
 import argparse
 import random
 from pathlib import Path
-from typing import Tuple
-
+from typing import Tuple,  Optional, Union, List, Dict
 import pandas as pd
+import numpy as np
+import random
+import math
+
+
+
+
+
 
 
 def _inject_cell_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame:
@@ -153,6 +160,197 @@ def inject_faults(
     augmented_ue.to_csv(ue_output, index=False)
 
     return augmented_cell, augmented_ue
+
+
+
+
+FAULT_TYPES = ["missing", "out_of_range", "inconsistent"]
+
+def _find_ts_col(df: pd.DataFrame, preferred: Optional[str] = None) -> str:
+    if preferred and preferred in df.columns:
+        return preferred
+    for c in ["timestamp","time","datetime","event_time","ts"]:
+        if c in df.columns: return c
+    for c in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[c]): return c
+    raise ValueError("No timestamp column found; pass ts_col.")
+
+def _ensure_dt(df: pd.DataFrame, ts_col: str):
+    if not pd.api.types.is_datetime64_any_dtype(df[ts_col]):
+        df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+    if df[ts_col].isna().all():
+        raise ValueError(f"Could not parse datetimes in '{ts_col}'.")
+
+def _mutate_row_values_cell(row: pd.Series, fault_type: str) -> pd.Series:
+    if fault_type == "missing":
+        for c in ["RRU.PrbAvailDl","RRU.PrbAvailUl","DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row: row[c] = pd.NA
+    elif fault_type == "out_of_range":
+        for c in ["RRU.PrbTotDl","RRU.PrbTotUl"]: 
+            if c in row and pd.notna(row[c]): row[c] = float(row[c]) * 3.0 + 50.0
+        for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row and pd.notna(row[c]): row[c] = float(row[c]) * 8.0
+    elif fault_type == "inconsistent":
+        if "RRU.PrbUsedDl" in row and "RRU.PrbAvailDl" in row: row["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 10
+        if "RRU.PrbUsedUl" in row and "RRU.PrbAvailUl" in row: row["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 10
+        if "RRC.ConnMean" in row: row["RRC.ConnMean"] = 3
+    return row
+
+def _mutate_row_values_ue(row: pd.Series, fault_type: str) -> pd.Series:
+    if fault_type == "missing":
+        for c in ["DRB.UECqiDl","DRB.UECqiUl","DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row: row[c] = pd.NA
+    elif fault_type == "out_of_range":
+        for c in ["DRB.UECqiDl","DRB.UECqiUl"]:
+            if c in row: row[c] = 25
+        for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
+            if c in row and pd.notna(row[c]): row[c] = float(row[c]) * 5.0
+    elif fault_type == "inconsistent":
+        for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
+            if c in row: row[c] = 0
+        for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row: row[c] = 120.0
+    return row
+
+
+
+def _cell_updates(row, fault_type):
+    u = {}
+    if fault_type == "missing":
+        for c in ["RRU.PrbAvailDl","RRU.PrbAvailUl","DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row: u[c] = np.nan
+    elif fault_type == "out_of_range":
+        for c in ["RRU.PrbTotDl","RRU.PrbTotUl"]:
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 3.0 + 50.0
+        for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 8.0
+    elif fault_type == "inconsistent":
+        if "RRU.PrbUsedDl" in row and "RRU.PrbAvailDl" in row:
+            u["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 10
+        if "RRU.PrbUsedUl" in row and "RRU.PrbAvailUl" in row:
+            u["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 10
+        if "RRC.ConnMean" in row:
+            u["RRC.ConnMean"] = 3
+    return u
+
+def _ue_updates(row, fault_type):
+    u = {}
+    if fault_type == "missing":
+        for c in ["DRB.UECqiDl","DRB.UECqiUl","DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row: u[c] = np.nan
+    elif fault_type == "out_of_range":
+        for c in ["DRB.UECqiDl","DRB.UECqiUl"]:
+            if c in row: u[c] = 25
+        for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 5.0
+    elif fault_type == "inconsistent":
+        for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
+            if c in row: u[c] = 0
+        for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
+            if c in row: u[c] = 120.0
+    return u
+
+def inject_faults_inplace_by_windows(
+    df: pd.DataFrame,
+    is_cell: bool,
+    ts_col: Optional[str] = None,
+    window_seconds: int = 300,            # e.g., 5 minutes
+    overlap: float = 0.8,                 # 0.0..0.99 (e.g., 0.8 = 80% overlap)
+    faulty_window_fraction: float = 0.15, # 10–20% typical
+    timestamps_per_faulty_window: int = 1,
+    rows_fraction_per_timestamp: float = 0.1,  # within chosen timestamp group
+    random_state: int = 42,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Sliding-window aware fault injection (in-place):
+    - Builds overlapping windows of length `window_seconds` and stride = window_seconds*(1-overlap)
+    - Randomly selects ~faulty_window_fraction of windows to be 'faulty'
+    - In each selected window, pick up to `timestamps_per_faulty_window` timestamps and corrupt a fraction of rows
+    - Keeps row count per timestamp unchanged; returns (df_with_flags, manifest)
+    """
+    if not (0 <= overlap < 1):
+        raise ValueError("overlap must be in [0, 1).")
+    stride = max(1, int(round(window_seconds * (1 - overlap))))
+    rnd = np.random.RandomState(random_state)
+
+    ts = _find_ts_col(df, ts_col)
+    _ensure_dt(df, ts)
+    out = df.copy(deep=True)
+
+    # add flags
+    if "dq_fault_flag" not in out.columns: out["dq_fault_flag"] = False
+    if "dq_fault_type" not in out.columns: out["dq_fault_type"] = pd.NA
+    if "dq_fault_window" not in out.columns: out["dq_fault_window"] = pd.NA
+
+    # Build sliding windows
+    tmin = out[ts].min()
+    tmax = out[ts].max()
+    if pd.isna(tmin) or pd.isna(tmax):
+        raise ValueError("Dataset has no valid timestamps.")
+
+    windows: List[Tuple[pd.Timestamp, pd.Timestamp]] = []
+    start = tmin
+    while start <= tmax:
+        end = start + pd.Timedelta(seconds=window_seconds)
+        windows.append((start, end))
+        start = start + pd.Timedelta(seconds=stride)
+
+    nW = len(windows)
+    n_faulty = max(1, int(round(nW * faulty_window_fraction)))
+    faulty_idxs = rnd.choice(np.arange(nW), size=n_faulty, replace=False)
+
+    manifest_rows: List[Dict] = []
+
+    # Precompute timestamps -> indices map for speed
+    out_sorted = out.sort_values(ts)
+    # Iterate windows
+    for w_idx in sorted(faulty_idxs):
+        w_start, w_end = windows[w_idx]
+        mask = (out_sorted[ts] >= w_start) & (out_sorted[ts] < w_end)
+        g = out_sorted.loc[mask]
+        if g.empty:
+            continue
+
+        uniq_ts = g[ts].dropna().unique()
+        pick_n = min(timestamps_per_faulty_window, len(uniq_ts))
+        chosen_ts = rnd.choice(uniq_ts, size=pick_n, replace=False)
+
+        for tstamp in chosen_ts:
+            sel = g[g[ts] == tstamp].index
+            if len(sel) == 0:
+                continue
+            n_rows = max(1, int(round(len(sel) * rows_fraction_per_timestamp)))
+            chosen_rows = rnd.choice(sel, size=n_rows, replace=False)
+
+            ftypes = []
+            for rid in chosen_rows:
+                ftype = random.choice(FAULT_TYPES)
+                if is_cell:
+                    updates = _cell_updates(out.loc[rid], ftype)
+                else:
+                    updates = _ue_updates(out.loc[rid], ftype)
+                #out.at[rid, "dq_fault_flag"] = True
+                #out.at[rid, "dq_fault_type"] = ftype
+                #out.at[rid, "dq_fault_window"] = int(w_idx)
+                for col, val in updates.items():
+                    out.at[rid, col] = val
+                ftypes.append(ftype)
+
+            manifest_rows.append({
+                "window_index": int(w_idx),
+                "window_start": pd.to_datetime(w_start),
+                "window_end":   pd.to_datetime(w_end),
+                "timestamp":    pd.to_datetime(tstamp),
+                "count_faulted": int(len(chosen_rows)),
+                "indices":      list(map(int, chosen_rows)),
+                "fault_types":  ftypes,
+            })
+
+    manifest = pd.DataFrame(manifest_rows).sort_values(["window_index","timestamp"])
+    out.drop(columns=["dq_fault_flag","dq_fault_type","dq_fault_window"],
+        errors="ignore", inplace=True)
+    out.drop(columns=["unit_conversion_version"], errors="ignore", inplace=True)
+    return out, manifest
 
 
 def main() -> None:
