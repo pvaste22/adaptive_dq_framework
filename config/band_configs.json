@@ -6,6 +6,7 @@
       "frequency_mhz": 1900,
       "bandwidth_mhz": 20,
       "prb_count": 100,
+      "per_prb_khz": 180.0,
       "spectral_efficiency_max": 25.0,
       "power_limits": {
         "min_watts": 50,
@@ -18,6 +19,7 @@
       "frequency_mhz": 700,
       "bandwidth_mhz": 15,
       "prb_count": 75,
+      "per_prb_khz": 180.0,
       "spectral_efficiency_max": 25.0,
       "power_limits": {
         "min_watts": 40,
@@ -30,6 +32,7 @@
       "frequency_mhz": 3700,
       "bandwidth_mhz": 100,
       "prb_count": 273,
+      "per_prb_khz": 360.0,
       "spectral_efficiency_max": 30.0,
       "power_limits": {
         "min_watts": 80,
