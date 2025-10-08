@@ -139,88 +139,38 @@ class AccuracyDimension(BaseDimension):
     # ----------------------------- A2 helper ------------------------------
     def _a2_se_series(self, df: pd.DataFrame) -> Tuple[pd.Series, Dict]:
         """
-        Row-wise spectral efficiency trip-wire:
-        SE = (Thp_gbps * 1e9) / (PRB_used * per_prb_Hz)
-        Pass if SE <= min(band_cap, 1.2×p99) (when p99 available).
-        Uses Band column if present, else extracts via PATTERNS['band_extractor'].
-        Treat very tiny PRB_used (<3) as NA to avoid numerical jitter.
+        Row-wise: SE = (Thp_bps) / (PRB_Avail * per_prb_Hz) <= cap
+        cap = min(abs_cap_global, 1.2 * p99) if p99 available else abs_cap_global
         """
         det: Dict = {}
-        req = {self.thp_dl_col, self.thp_ul_col, self.prb_used_dl, self.prb_used_ul, self.cell_ent_col}
-        if df.empty or not req.issubset(df.columns):
+        if df.empty or self.thp_dl_col not in df.columns or self.prb_avail_dl not in df.columns:
+            # return empty float series
             return pd.Series([], dtype='float'), {'note': 'missing columns or empty df'}
 
-        # Band per row (prefer precomputed column)
-        if 'Band' in df.columns:
-            band_series = df['Band'].astype(str)
-        else:
-            band_series = df[self.cell_ent_col].astype(str).str.extract(PATTERNS['band_extractor'])[0]
+        # Caps (DL/UL may differ if p99 present)
+        cap_dl = min(self.se_abs_cap_glob, 1.2 * self.se_dl_p99) if self.se_dl_p99 else self.se_abs_cap_glob
+        cap_ul = min(self.se_abs_cap_glob, 1.2 * self.se_ul_p99) if self.se_ul_p99 else self.se_abs_cap_glob
 
-        # Per-band PRB width (kHz) and spectral-efficiency cap
-        # If band missing → fallback to self.per_prb_khz, self.se_abs_cap_glob
-        band_to_prb_khz = {}
-        band_to_cap = {}
-        for band, spec in (BAND_SPECS or {}).items():
-            per_khz = spec.get('per_prb_khz')
-            if per_khz is None:
-                bw_mhz = spec.get('bandwidth_mhz'); prb_cnt = spec.get('prb_count')
-                if bw_mhz and prb_cnt:
-                    per_khz = (float(bw_mhz) * 1000.0) / float(prb_cnt)
-            if per_khz:
-                band_to_prb_khz[band] = float(per_khz)
-            cap = spec.get('spectral_efficiency_max')
-            if cap is not None:
-                band_to_cap[band] = float(cap)
+        def per_side(thp_col, avail_col, cap):
+            thp_gbps = pd.to_numeric(df[thp_col], errors='coerce')
+            avail    = pd.to_numeric(df[avail_col], errors='coerce')
+            denom_hz = avail * (self.per_prb_khz * 1e3)
+            se = (thp_gbps * 1e9) / denom_hz.replace(0, np.nan)
+            se = se.replace([np.inf, -np.inf], np.nan)
+            ok = se.le(cap).astype('float')   # True→1.0, False→0.0, NaN stays NaN
+            ok[se.isna()] = np.nan            # not applicable rows
+            return ok, {
+                'cap': float(cap),
+                'applicable': int(ok.notna().sum()),
+                'passed': int((ok == 1.0).sum()),
+            }
 
-        perprb_khz = band_series.map(band_to_prb_khz).fillna(float(self.per_prb_khz)).astype(float)
-        band_cap   = band_series.map(band_to_cap).fillna(float(self.se_abs_cap_glob)).astype(float)
+        s_dl, d_dl = per_side(self.thp_dl_col, self.prb_avail_dl, cap_dl)
+        s_ul, d_ul = per_side(self.thp_ul_col, self.prb_avail_ul, cap_ul)
 
-        # p99-based soft cap (same for all rows; keep original behavior)
-        # per-row p99 (band-specific if available), then 1.2×p99
-        p99_dl_byband_map = {k: float(v) for k, v in (self.se_dl_p99_byband or {}).items()}
-        p99_ul_byband_map = {k: float(v) for k, v in (self.se_ul_p99_byband or {}).items()}
-
-        p99_dl_row = band_series.map(p99_dl_byband_map)
-        p99_ul_row = band_series.map(p99_ul_byband_map)
-
-        # fall back to global p99 (or +inf if not available)
-        p99_dl_row = p99_dl_row.fillna(float(self.se_dl_p99) if self.se_dl_p99 is not None else np.inf).astype(float)
-        p99_ul_row = p99_ul_row.fillna(float(self.se_ul_p99) if self.se_ul_p99 is not None else np.inf).astype(float)
-
-        p99_dl_cap_series = 1.2 * p99_dl_row
-        p99_ul_cap_series = 1.2 * p99_ul_row
-
-        # --- Downlink ---
-        thp_dl   = pd.to_numeric(df[self.thp_dl_col], errors='coerce')              # Gbps
-        used_dl  = pd.to_numeric(df[self.prb_used_dl], errors='coerce')             # PRBs (used)
-        # very small PRB_used → NA (avoid jitter)
-        valid_dl = used_dl.ge(3) & thp_dl.notna() & perprb_khz.notna()
-        denom_hz_dl = used_dl * (perprb_khz * 1e3)
-        se_dl = pd.Series(np.nan, index=df.index, dtype='float')
-        se_dl.loc[valid_dl] = (thp_dl.loc[valid_dl] * 1e9) / denom_hz_dl.loc[valid_dl].replace(0, np.nan)
-        se_dl = se_dl.replace([np.inf, -np.inf], np.nan)
-
-        cap_row_dl = np.minimum(band_cap, p99_dl_cap_series) # per-row: min(band cap, 1.2×p99)
-        ok_dl = (se_dl <= cap_row_dl).astype('float')
-        ok_dl[se_dl.isna() | cap_row_dl.isna()] = np.nan
-
-        # --- Uplink ---
-        thp_ul   = pd.to_numeric(df[self.thp_ul_col], errors='coerce')
-        used_ul  = pd.to_numeric(df[self.prb_used_ul], errors='coerce')
-        valid_ul = used_ul.ge(3) & thp_ul.notna() & perprb_khz.notna()
-        denom_hz_ul = used_ul * (perprb_khz * 1e3)
-        se_ul = pd.Series(np.nan, index=df.index, dtype='float')
-        se_ul.loc[valid_ul] = (thp_ul.loc[valid_ul] * 1e9) / denom_hz_ul.loc[valid_ul].replace(0, np.nan)
-        se_ul = se_ul.replace([np.inf, -np.inf], np.nan)
-
-        cap_row_ul = np.minimum(band_cap, p99_ul_cap_series)
-        ok_ul = (se_ul <= cap_row_ul).astype('float')
-        ok_ul[se_ul.isna() | cap_row_ul.isna()] = np.nan
-
-        # Combine + details
-        series = pd.concat([ok_dl, ok_ul], ignore_index=True) if (len(ok_dl) or len(ok_ul)) else pd.Series([], dtype='float')
-        det['dl'] = {'applicable': int(ok_dl.notna().sum()), 'passed': int((ok_dl == 1.0).sum())}
-        det['ul'] = {'applicable': int(ok_ul.notna().sum()), 'passed': int((ok_ul == 1.0).sum())}
+        # merge two row-wise series (concat)
+        series = pd.concat([s_dl, s_ul], ignore_index=True) if len(s_dl) or len(s_ul) else pd.Series([], dtype='float')
+        det.update({'dl': d_dl, 'ul': d_ul})
         return series, det
 
 
