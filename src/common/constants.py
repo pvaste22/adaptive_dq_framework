@@ -251,7 +251,7 @@ SCORING_LEVELS = {
 }
 
 NEAR_ZERO_THRESHOLDS = {
-    'throughput_gbps': 0.001,  # < 1 Mbps considered ~0
+    'throughput_gbps': 0.002,  # < 1 Mbps considered ~0
     'power_watts': 0.1,        # < 0.1 W considered ~0
     'connections': 0           # Exactly 0 (no approximation)
 }

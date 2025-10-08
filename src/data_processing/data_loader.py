@@ -40,7 +40,7 @@ class DataLoader:
         ue_data = self._load_ue_reports()
         
         # Apply necessary data corrections (not quality assessment)
-        #cell_data = self._correct_cell_data(cell_data)
+        cell_data = self._correct_cell_data(cell_data)
         #ue_data = self._correct_ue_data(ue_data)
         
         self.logger.info(f"Loaded {len(cell_data)} cell records, {len(ue_data)} UE records")
@@ -84,12 +84,12 @@ class DataLoader:
         
         return df
     
-    #def _correct_cell_data(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _correct_cell_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Apply necessary data corrections for cell data.
         Only corrections, not quality assessment.
         """
-        """df = df.copy()
+        df = df.copy()
         
         # Extract band information - required for framework operations
         if 'Band' not in df.columns and self.column_names['cell_entity'] in df.columns:
@@ -99,7 +99,7 @@ class DataLoader:
             self.logger.info(f"Extracted band information: {df['Band'].value_counts().to_dict()}")
         
         
-        return df"""
+        return df
     
     #def _correct_ue_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
