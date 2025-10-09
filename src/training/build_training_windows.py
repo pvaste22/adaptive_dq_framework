@@ -1,4 +1,4 @@
-# scripts/build_windows_only.py
+
 import sys
 from datetime import datetime
 from common.logger import get_phase1_logger

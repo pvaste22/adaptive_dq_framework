@@ -46,12 +46,13 @@ class PCAConsolidator:
         # drop near-constant columns (avoid z-score blow-ups)
         stds = X.std(axis=0, ddof=0)
         keep_mask = stds > 1e-9
-        if not keep_mask.any():
+        #near constant col drop disabled here commented
+        #if not keep_mask.any():
             # fallback: keep all but use epsilon std
-            keep_mask[:] = True
-            stds = stds.replace(0, 1e-9)
+            #keep_mask[:] = True
+            #stds = stds.replace(0, 1e-9)
 
-        Xk = X.loc[:, keep_mask.index[keep_mask]]
+        Xk = X.loc[:, stds.index]   
         mu = Xk.mean(axis=0).values
         sd = Xk.std(axis=0, ddof=0).values
         sd[sd == 0.0] = 1e-9  # epsilon

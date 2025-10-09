@@ -64,6 +64,17 @@ def _inject_cell_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame
             if "RRC.ConnMean" in row and "DRB.UEThpDl" in row:
                 row["RRC.ConnMean"] = 5
                 row["DRB.UEThpDl"] = 0.0
+        elif fault_type == "timeliness":
+            timestamp_cols = [c for c in row.index if isinstance(c, str) and ("time" in c.lower() or "timestamp" in c.lower())]
+            for col in timestamp_cols:
+                orig_val = pd.to_numeric(row[col], errors="coerce")
+                if pd.notna(orig_val):
+                    # random large jitter ±61, ±90, ±120 s
+                    jitter = random.choice([-120, -90, -61, 61, 90, 120])
+                    row[col] = orig_val + jitter
+                else:
+                    # for string timestamps, append suffix
+                    row[col] = f"{row[col]}_jitter"
         # Assign the modified row back
         faulty_rows.loc[idx] = row
     return faulty_rows
@@ -113,6 +124,18 @@ def _inject_ue_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame:
             for col in ["DRB.UEThpDl", "DRB.UEThpUl"]:
                 if col in row:
                     row[col] = 100.0  # some positive throughput
+        elif fault_type == "timeliness":
+            timestamp_cols = [c for c in row.index if isinstance(c, str) and ("time" in c.lower() or "timestamp" in c.lower())]
+            for col in timestamp_cols:
+                orig_val = pd.to_numeric(row[col], errors="coerce")
+                if pd.notna(orig_val):
+                    # random large jitter ±61, ±90, ±120 s
+                    jitter = random.choice([-120, -90, -61, 61, 90, 120])
+                    row[col] = orig_val + jitter
+                else:
+                    # for string timestamps, append suffix
+                    row[col] = f"{row[col]}_jitter"
+           
         faulty_rows.loc[idx] = row
     return faulty_rows
 
@@ -164,7 +187,7 @@ def inject_faults(
 
 
 
-FAULT_TYPES = ["missing", "out_of_range", "inconsistent"]
+FAULT_TYPES = ["missing", "out_of_range", "inconsistent", "timeliness"]
 
 def _find_ts_col(df: pd.DataFrame, preferred: Optional[str] = None) -> str:
     if preferred and preferred in df.columns:
