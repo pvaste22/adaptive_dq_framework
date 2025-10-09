@@ -43,7 +43,7 @@ def _flatten_dimension_results(dim_results: dict) -> dict:
 
 
 
-def generate_labeled_dataset(windows_dir: Path, output_dir: Path) -> pd.DataFrame:
+def generate_labeled_dataset_old(windows_dir: Path, output_dir: Path) -> pd.DataFrame:
     """Generate labelled dataset from scored windows.
 
     Parameters
@@ -84,7 +84,7 @@ def generate_labeled_dataset(windows_dir: Path, output_dir: Path) -> pd.DataFram
         raise ValueError("All flattened MPR values are NaN/non-numeric. "
                      "Check that dimensions return numeric 'mpr'/'score'.")
     # Step 3: fit PCA consolidator and compute labels
-    consolidator = PCAConsolidator()
+    consolidator = PCAConsolidator(good_is_high=True, round_ndecimals=2)
     consolidator.fit(dim_df)
     labels = consolidator.transform(dim_df)
     # Persist PCA parameters for deployment
@@ -115,5 +115,97 @@ def generate_labeled_dataset(windows_dir: Path, output_dir: Path) -> pd.DataFram
     dataset.to_parquet(target, index=False)
     return dataset
 
+
+def generate_labeled_dataset(
+    windows_dir: str,
+    output_parquet: str,
+    pca_mode: str = "fit",                 # "fit" (train on full set) or "transform" (use saved model)
+    pca_model_path: str = "artifacts/pca_consolidator.json",
+) -> None:
+    """
+    Build labeled dataset from window scores using PCA consolidator.
+    - pca_mode="fit": fit PCA on ALL windows here, save model, also output labels for these windows.
+    - pca_mode="transform": load saved model and ONLY transform these windows (no fitting).
+    """
+
+    windows_dir = Path(windows_dir)
+    if not windows_dir.exists():
+        raise FileNotFoundError(f"{windows_dir} not found")
+
+    # 1) Score windows (your existing scorer)
+    scored = score_windows_in_directory(windows_dir)  # must return {window_id: {"path":..., "result": {...}}}
+    if not scored:
+        raise RuntimeError(f"No windows scored in {windows_dir}")
+
+    # 2) Build PCA feature matrix (rows=windows, cols=dimension MPRs)
+    window_ids = list(scored.keys())
+    dim_rows, paths = [], []
+    for wid in window_ids:
+        payload = scored[wid]
+        paths.append(Path(payload["path"]))
+        dim_rows.append(_flatten_dimension_results(payload["result"]))
+
+    dim_df = pd.DataFrame(dim_rows, index=window_ids)
+    if dim_df.empty:
+        raise RuntimeError("No numeric dimension scores to feed PCA.")
+
+    # 3) PCA: train-once vs reuse
+    pca_model_file = Path(pca_model_path)
+    if pca_mode == "fit":
+        pca_model_file.parent.mkdir(parents=True, exist_ok=True)
+        cons = PCAConsolidator(good_is_high=True, round_ndecimals=2)  # 1=good, 0=bad + 2 dp
+        cons.fit(dim_df)                                              # TRAIN on full set
+        # (Optional) also produce labels for this same set
+        labels = cons.transform(dim_df)
+        with pca_model_file.open("w", encoding="utf-8") as fh:
+            json.dump(cons.to_dict(), fh, indent=2)
+        print(f"[PCA] Trained and saved model -> {pca_model_file}")
+    elif pca_mode == "transform":
+        if not pca_model_file.exists():
+            raise FileNotFoundError(f"PCA model not found: {pca_model_file}")
+        with pca_model_file.open("r", encoding="utf-8") as fh:
+            cons = PCAConsolidator.from_dict(json.load(fh))
+        labels = cons.transform(dim_df)                                # USE TRAINING STATS
+        print(f"[PCA] Loaded model and transformed {len(window_ids)} windows.")
+    else:
+        raise ValueError("pca_mode must be 'fit' or 'transform'")
+
+    # 4) Assemble final labeled rows (keep your feature extraction if you have it)
+    # If you already build a feature row from raw window data, call that here.
+    # Otherwise, we at least output window_id + label.
+    rows = []
+    for i, wid in enumerate(window_ids):
+        # If you have: window_data = load_window_from_disk(paths[i]); feat = make_feature_row(window_data)
+        # else minimal row:
+        rows.append({
+            "window_id": wid,
+            "label": float(labels[i]),      # already rounded to 2 dp by consolidator
+        })
+
+    dataset = pd.DataFrame(rows, columns=["window_id", "label"])
+
+    # 5) Save labeled dataset
+    out_path = Path(output_parquet)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    dataset.to_parquet(out_path, index=False)
+    print(f"[OK] Labeled dataset -> {out_path}")
+    # (Optional) quick peek
+    print(dataset.head())
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--windows_dir", required=True)
+    ap.add_argument("--output_parquet", required=True)
+    ap.add_argument("--pca_mode", choices=["fit", "transform"], default="fit")
+    ap.add_argument("--pca_model_path", default="artifacts/pca_consolidator.json")
+    args = ap.parse_args()
+
+    generate_labeled_dataset(
+        windows_dir=args.windows_dir,
+        output_parquet=args.output_parquet,
+        pca_mode=args.pca_mode,
+        pca_model_path=args.pca_model_path,
+    )
 
 __all__ = ['generate_labeled_dataset']
