@@ -37,7 +37,7 @@ def _inject_cell_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame
     # Inject various faults
     for idx, row in faulty_rows.iterrows():
         # Randomly pick a fault type
-        fault_type = random.choice(["missing", "out_of_range", "inconsistent"])
+        fault_type = random.choice(["missing", "out_of_range", "inconsistent", "timeliness"])
         if fault_type == "missing":
             # Drop a mandatory field such as PRB availability
             if "RRU.PrbAvailDl" in row:
@@ -99,7 +99,7 @@ def _inject_ue_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame:
     n_faults = max(1, int(n_rows * fault_fraction))
     faulty_rows = df.sample(n=n_faults, random_state=42).copy(deep=True)
     for idx, row in faulty_rows.iterrows():
-        fault_type = random.choice(["missing", "out_of_range", "inconsistent"])
+        fault_type = random.choice(["missing", "out_of_range", "inconsistent", "timeliness"])
         if fault_type == "missing":
             # Missing CQI values
             if "DRB.UECqiDl" in row:
@@ -254,6 +254,14 @@ def _cell_updates(row, fault_type):
             u["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 10
         if "RRC.ConnMean" in row:
             u["RRC.ConnMean"] = 3
+    elif fault_type == "timeliness":
+        ts_col = "timestamp"  
+        ts = row.get(ts_col, None)
+        if ts is not None and pd.notna(ts):
+            ts = pd.to_datetime(ts, utc=True, errors="coerce")
+            if pd.notna(ts):
+                jitter = random.choice([-120, -90, -61, 61, 90, 120])  # secs
+                u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)            
     return u
 
 def _ue_updates(row, fault_type):
@@ -271,6 +279,14 @@ def _ue_updates(row, fault_type):
             if c in row: u[c] = 0
         for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
             if c in row: u[c] = 120.0
+    elif fault_type == "timeliness":
+        ts_col = "timestamp"  
+        ts = row.get(ts_col, None)
+        if ts is not None and pd.notna(ts):
+            ts = pd.to_datetime(ts, utc=True, errors="coerce")
+            if pd.notna(ts):
+                jitter = random.choice([-120, -90, -61, 61, 90, 120])  # secs
+                u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)           
     return u
 
 def inject_faults_inplace_by_windows(
@@ -348,15 +364,27 @@ def inject_faults_inplace_by_windows(
             ftypes = []
             for rid in chosen_rows:
                 ftype = random.choice(FAULT_TYPES)
-                if is_cell:
-                    updates = _cell_updates(out.loc[rid], ftype)
+                if ftype == "timeliness":
+                    # ts_col से timestamp पढ़ें
+                    orig_ts = out.at[rid, ts]         # ts = आपके टाइम‑स्टैम्प कॉलम का नाम
+                    orig_dt = pd.to_datetime(orig_ts, errors="coerce")
+                    if pd.notna(orig_dt):
+                        # cadence से काफी बड़ा offset ±61/90/120s दें; negative offset monotonicity तोड़ देगा
+                        jitter = random.choice([-120, -90, -61, 61, 90, 120])
+                        out.at[rid, ts] = orig_dt + pd.Timedelta(seconds=jitter)
+                    else:
+                        # string timestamp है तो suffix जोड़ दें
+                        out.at[rid, ts] = f"{orig_ts}_jitter"
                 else:
-                    updates = _ue_updates(out.loc[rid], ftype)
-                #out.at[rid, "dq_fault_flag"] = True
-                #out.at[rid, "dq_fault_type"] = ftype
-                #out.at[rid, "dq_fault_window"] = int(w_idx)
-                for col, val in updates.items():
-                    out.at[rid, col] = val
+                    if is_cell:
+                        updates = _cell_updates(out.loc[rid], ftype)
+                    else:
+                        updates = _ue_updates(out.loc[rid], ftype)
+                    #out.at[rid, "dq_fault_flag"] = True
+                    #out.at[rid, "dq_fault_type"] = ftype
+                    #out.at[rid, "dq_fault_window"] = int(w_idx)
+                    for col, val in updates.items():
+                        out.at[rid, col] = val
                 ftypes.append(ftype)
 
             manifest_rows.append({
