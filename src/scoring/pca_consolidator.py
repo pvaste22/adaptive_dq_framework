@@ -27,8 +27,8 @@ class PCAConsolidator:
         self.col_stds_  = None          # np.ndarray (len = n_features)
         self.keep_cols_ = None          # list[str] kept (non-near-constant) columns
         self.pc1_vec_   = None          # np.ndarray (len = n_features_kept)
-        self.pc1_min_   = None          # float (training min PC1 score)
-        self.pc1_max_   = None          # float (training max PC1 score)
+        self.pc1_mu_    = None          # float (training minmean PC1 score)
+        self.pc1_sd_    = None          # float (training sd PC1 score)
 
     # ------------------- FIT ON FULL TRAINING SET ------------------- #
     def fit(self, X: pd.DataFrame) -> "PCAConsolidator":
@@ -91,7 +91,7 @@ class PCAConsolidator:
         self.pc1_sd_   = pc1_sd
         return self
 
-    # ------------------- TRANSFORM ANY (TEST) WINDOWS ------------------- #
+    # ------------------- TRANSFORM  WINDOWS ------------------- #
     def transform(self, X: pd.DataFrame) -> np.ndarray:
         """
         Transform new windows using TRAINING stats (no re-fit, no per-batch min-max).
@@ -116,11 +116,14 @@ class PCAConsolidator:
         Z = (Xk.values - self.col_means_) / self.col_stds_
         pc1_scores = Z @ self.pc1_vec_
 
-        # training stats reused: self.pc1_min_ = mean, self.pc1_max_ = std
-        pc1_mu  = self.pc1_mu_
-        pc1_sd  = self.pc1_sd_ if self.pc1_sd_ and self.pc1_sd_ > 0 else 1.0
+        # standardize
         pc1_z = (pc1_scores - self.pc1_mu_) / self.pc1_sd_
-        labels = -pc1_z if self.good_is_high else pc1_z
+        pc1_z_clipped = np.clip(pc1_z, -3.0, 3.0)
+        badness = (pc1_z_clipped + 3.0) / 6.0
+        if self.good_is_high:
+            labels = 1.0 - badness
+        else:
+            labels = badness
 
         if self.round_ndecimals is not None:
             labels = np.round(labels, self.round_ndecimals)
@@ -135,8 +138,8 @@ class PCAConsolidator:
             "col_means_": None if self.col_means_ is None else self.col_means_.tolist(),
             "col_stds_":  None if self.col_stds_  is None else self.col_stds_.tolist(),
             "pc1_vec_":   None if self.pc1_vec_   is None else self.pc1_vec_.tolist(),
-            "pc1_min_":   self.pc1_min_,
-            "pc1_max_":   self.pc1_max_,
+            "pc1_mu_":   self.pc1_mu_,
+            "pc1_sd_":   self.pc1_sd_ ,
         }
 
     @classmethod
@@ -149,8 +152,8 @@ class PCAConsolidator:
         obj.col_means_ = np.array(d["col_means_"]) if d.get("col_means_") is not None else None
         obj.col_stds_  = np.array(d["col_stds_"])  if d.get("col_stds_")  is not None else None
         obj.pc1_vec_   = np.array(d["pc1_vec_"])   if d.get("pc1_vec_")   is not None else None
-        obj.pc1_min_   = d.get("pc1_min_")
-        obj.pc1_max_   = d.get("pc1_max_")
+        obj.pc1_mu_   = d.get("pc1_mu_")
+        obj.pc1_sd_   = d.get("pc1_sd_")
         return obj
 
 

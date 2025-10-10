@@ -34,9 +34,9 @@ def main():
         ts_col="timestamp",
         window_seconds=300,
         overlap=0.8,
-        faulty_window_fraction=0.15,     # 10–20% ke beech rakho
-        timestamps_per_faulty_window=1,  # per faulty window 1 timestamp par fault
-        rows_fraction_per_timestamp=0.10,# us ts group ka ~10% rows corrupt
+        faulty_window_fraction=0.70,     # 10–20% ke beech rakho
+        timestamps_per_faulty_window=3,  # per faulty window 1 timestamp par fault
+        rows_fraction_per_timestamp=0.40,# us ts group ka ~10% rows corrupt
         random_state=42,
     )
 
@@ -46,9 +46,9 @@ def main():
         ts_col="timestamp",
         window_seconds=300,
         overlap=0.8,
-        faulty_window_fraction=0.15,
-        timestamps_per_faulty_window=2, 
-        rows_fraction_per_timestamp=0.25,
+        faulty_window_fraction=0.70,
+        timestamps_per_faulty_window=3, 
+        rows_fraction_per_timestamp=0.50,
         random_state=42,
     )
 

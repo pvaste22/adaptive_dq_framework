@@ -244,9 +244,9 @@ def _cell_updates(row, fault_type):
             if c in row: u[c] = np.nan
     elif fault_type == "out_of_range":
         for c in ["RRU.PrbTotDl","RRU.PrbTotUl"]:
-            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 3.0 + 50.0
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 5.0 + 80.0
         for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
-            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 8.0
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 15.0
     elif fault_type == "inconsistent":
         if "RRU.PrbUsedDl" in row and "RRU.PrbAvailDl" in row:
             u["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 10
@@ -273,7 +273,7 @@ def _ue_updates(row, fault_type):
         for c in ["DRB.UECqiDl","DRB.UECqiUl"]:
             if c in row: u[c] = 25
         for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
-            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 5.0
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 10.0
     elif fault_type == "inconsistent":
         for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
             if c in row: u[c] = 0
