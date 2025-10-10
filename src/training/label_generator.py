@@ -170,9 +170,9 @@ def generate_labeled_dataset(
     else:
         raise ValueError("pca_mode must be 'fit' or 'transform'")
 
-    # 4) Assemble final labeled rows (keep your feature extraction if you have it)
-    # If you already build a feature row from raw window data, call that here.
-    # Otherwise, we at least output window_id + label.
+    # 4) Assemble final labeled rows 
+    # build a feature row from raw window data
+
     rows = []
     for i, wid in enumerate(window_ids):
         # : window_data = load_window_from_disk(paths[i]); feat = make_feature_row(window_data)

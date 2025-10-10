@@ -241,20 +241,20 @@ def _cell_updates(row, fault_type):
     u = {}
     if fault_type == "missing":
         for c in ["RRU.PrbAvailDl","RRU.PrbAvailUl","DRB.UEThpDl","DRB.UEThpUl",
-                  "RRU.PrbUsedDl","RRU.PrbUsedUl","RRC.ConnMean"]:
+                  "RRU.PrbUsedDl","RRU.PrbUsedUl","RRC.ConnMean", "Viavi.Cell.Name"]:
             if c in row: u[c] = np.nan
     elif fault_type == "out_of_range":
         for c in ["RRU.PrbTotDl","RRU.PrbTotUl"]:
-            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 5.0 + 80.0
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 1.5 + 20.0
         for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
-            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 15.0
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 3.0
     elif fault_type == "inconsistent":
         if "RRU.PrbUsedDl" in row and "RRU.PrbAvailDl" in row:
-            u["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 25
+            u["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 5
         if "RRU.PrbUsedUl" in row and "RRU.PrbAvailUl" in row:
-            u["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 25
+            u["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 5
         if "PEE.AvgPower" in row:
-            u["PEE.AvgPower"] = float(row["PEE.AvgPower"]) * 0.1
+            u["PEE.AvgPower"] = float(row["PEE.AvgPower"]) * 0.6
         if "RRC.ConnMean" in row:
             u["RRC.ConnMean"] = 3
     elif fault_type == "timeliness":
@@ -270,18 +270,18 @@ def _cell_updates(row, fault_type):
 def _ue_updates(row, fault_type):
     u = {}
     if fault_type == "missing":
-        for c in ["DRB.UECqiDl","DRB.UECqiUl","DRB.UEThpDl","DRB.UEThpUl"]:
+        for c in ["DRB.UECqiDl","DRB.UECqiUl","DRB.UEThpDl","DRB.UEThpUl","Viavi.UE.Name"]:
             if c in row: u[c] = np.nan
     elif fault_type == "out_of_range":
         for c in ["DRB.UECqiDl","DRB.UECqiUl"]:
             if c in row: u[c] = 25
         for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
-            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 10.0
+            if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 3.0
     elif fault_type == "inconsistent":
         for c in ["RRU.PrbUsedDl","RRU.PrbUsedUl"]:
             if c in row: u[c] = 0
         for c in ["DRB.UEThpDl","DRB.UEThpUl"]:
-            if c in row: u[c] = 120.0
+            if c in row: u[c] = 50.0
     elif fault_type == "timeliness":
         ts_col = "timestamp"  
         ts = row.get(ts_col, None)
@@ -367,7 +367,7 @@ def inject_faults_inplace_by_windows(
             ftypes = []
             for rid in chosen_rows:
                 # Guarantee timeliness faults in every 3rd faulty window
-                if w_idx % 3 == 0:
+                if w_idx % 2 == 0 or rnd.random() < 0.5:
                     ftype = "timeliness"
                 else:
                     ftype = random.choice(FAULT_TYPES)

@@ -1,5 +1,6 @@
 
 
+from typing import Iterable
 from quality_dimensions.completeness import CompletenessDimension
 from quality_dimensions.timeliness import TimelinessDimension
 from quality_dimensions.consistency import ConsistencyDimension
@@ -11,7 +12,8 @@ import csv
 
 # Load one window
 windows_dir = Path('data/processed/training/v0/windows')
-window_path = windows_dir / 'window_000004_20221231_160000'   
+window_path = windows_dir / 'window_000491_20230101_000700'   
+# window_000379_20221231_221500  window_000491_20230101_000700 window_000552_20230101_010800
 # First window  window_009908_20230107_130800  window_010037_20230107_151700  window_000000_20221231_160000  window_009813_20230107_113300 
 #  window_010057_20230107_153700 window_000345_20221231_214500
 #  window_002562_20230102_104200   window_005090_20230104_045000  window_008359_20230106_111900 window_000121_20221231_180100 
@@ -26,6 +28,27 @@ cons = ConsistencyDimension()
 val = ValidityDimension()
 acc = AccuracyDimension()
 
+def _default_dimensions() -> Iterable:
+    """Create a new list of dimension calculator instances.
+
+    Returns
+    -------
+    Iterable
+        A list containing one instance of each dimension calculator. A
+        fresh instance is created on every call to ensure that
+        potential internal state (e.g., score histories) does not
+        accumulate between windows.
+    """
+    return [
+        TimelinessDimension(),
+        CompletenessDimension(),
+        ValidityDimension(),
+        ConsistencyDimension(),
+        AccuracyDimension(),
+    ]
+dims = _default_dimensions()
+for dim in dims:
+    print(f'{dim}_mpr')
 # Load window
 window_data = timely.load_window_from_disk(window_path)
 

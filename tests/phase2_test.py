@@ -36,7 +36,7 @@ def main() -> None:
         print()
 
     print("\nGenerating labelled dataset...\n", end=' ', flush=True)
-    dataset = generate_labeled_dataset(windows_dir, OUTPUT_DIR)  # use constants
+    dataset = generate_labeled_dataset(windows_dir, OUTPUT_DIR, pca_mode="transform", pca_model_path= "./data/artifacts/models/pca_consolidator.json")  # use constants
     print("done.")
     print("\nFirst few rows of the labelled dataset:\n" + "-" * 40)
     print(dataset.head())

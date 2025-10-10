@@ -76,6 +76,9 @@ class PCAConsolidator:
         pc1 *= sign
 
         pc1_scores = Z.values @ pc1
+        self.loadings_ = pc1.copy()  # PC1 weights for each dimension
+        total_var = eigvals.sum()
+        self.explained_variance_ratio_ = float(eigvals[-1] / total_var)
         pc1_mu = float(np.nanmean(pc1_scores))
         pc1_sd = float(np.nanstd(pc1_scores, ddof=0))
         if not np.isfinite(pc1_sd) or pc1_sd <= 0:
@@ -140,6 +143,8 @@ class PCAConsolidator:
             "pc1_vec_":   None if self.pc1_vec_   is None else self.pc1_vec_.tolist(),
             "pc1_mu_":   self.pc1_mu_,
             "pc1_sd_":   self.pc1_sd_ ,
+            "loadings_": self.loadings_.tolist() if hasattr(self, 'loadings_') else None,
+            "explained_variance_ratio_": float(self.explained_variance_ratio_) if hasattr(self, 'explained_variance_ratio_') else None,
         }
 
     @classmethod
@@ -154,6 +159,8 @@ class PCAConsolidator:
         obj.pc1_vec_   = np.array(d["pc1_vec_"])   if d.get("pc1_vec_")   is not None else None
         obj.pc1_mu_   = d.get("pc1_mu_")
         obj.pc1_sd_   = d.get("pc1_sd_")
+        obj.loadings_ = np.array(d.get("loadings_")) if d.get("loadings_") else None
+        obj.explained_variance_ratio_ = d.get("explained_variance_ratio_")
         return obj
 
 
