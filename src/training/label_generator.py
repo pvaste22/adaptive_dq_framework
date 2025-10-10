@@ -175,21 +175,30 @@ def generate_labeled_dataset(
     # Otherwise, we at least output window_id + label.
     rows = []
     for i, wid in enumerate(window_ids):
-        # If you have: window_data = load_window_from_disk(paths[i]); feat = make_feature_row(window_data)
+        # : window_data = load_window_from_disk(paths[i]); feat = make_feature_row(window_data)
+        window_data = load_window_from_disk(paths[i])
+        feat_row = make_feature_row(window_data)
+        # Attach metadata
+        feat_row["window_id"] = wid
+        feat_row["label"] = float(labels[i])
         # else minimal row:
-        rows.append({
-            "window_id": wid,
-            "label": float(labels[i]),      # already rounded to 2 dp by consolidator
-        })
+        rows.append(feat_row)
 
-    dataset = pd.DataFrame(rows, columns=["window_id", "label"])
+    dataset = pd.DataFrame(rows)
 
-    # 5) Save labeled dataset
+    # 5) Enforce consistent column order
+    schema = load_feature_schema()
+    if not schema:
+        schema = [c for c in dataset.columns if c not in ["label", "window_id"]] + ["label", "window_id"]
+        save_feature_schema(schema)
+    dataset = dataset.reindex(columns=schema, fill_value=0.0)
+
+    # 6) Save labeled dataset
     out_path = Path(output_parquet)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     dataset.to_parquet(out_path, index=False)
     print(f"[OK] Labeled dataset -> {out_path}")
-    # (Optional) quick peek
+    print(f"Shape: {dataset.shape}")  # Should be (n_windows, 200+ features)
     print(dataset.head())
 
 if __name__ == "__main__":

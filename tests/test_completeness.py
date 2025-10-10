@@ -11,33 +11,33 @@ import csv
 
 # Load one window
 windows_dir = Path('data/processed/training/v0/windows')
-window_path = windows_dir / 'window_000095_20221231_173500'   
+window_path = windows_dir / 'window_000000_20221231_160000'   
 # First window  window_009908_20230107_130800  window_010037_20230107_151700  window_000000_20221231_160000  window_009813_20230107_113300 
-#  window_010057_20230107_153700
+#  window_010057_20230107_153700 window_000345_20221231_214500
 #  window_002562_20230102_104200   window_005090_20230104_045000  window_008359_20230106_111900 window_000121_20221231_180100 
-#  window_005483_20230104_112300  window_005290_20230104_081000  window_005178_20230104_061800  window_005084_20230104_044400 
+#  window_005483_20230104_112300  window_005290_20230104_081000  window_005178_20230104_061800  window_005084_20230104_044400 (perfect score)
 # window_005042_20230104_040200 window_000471_20221231_235100
 #window_000097_20221231_173700  window_003659_20230103_045900  window_009935_20230107_133500  window_001156_20230101_111600  
-# window_000471_20221231_235100 window_005084_20230104_044400 window_005042_20230104_040200 window_000471_20221231_235100
+# window_000471_20221231_235100 window_005084_20230104_044400 window_005042_20230104_040200 window_000471_20221231_235100, window_010014_20230107_145400
 # Initialize
-#comp = CompletenessDimension()
+comp = CompletenessDimension()
 timely = TimelinessDimension()
-#cons = ConsistencyDimension()
-#val = ValidityDimension()
-#acc = AccuracyDimension()
+cons = ConsistencyDimension()
+val = ValidityDimension()
+acc = AccuracyDimension()
 
 # Load window
 window_data = timely.load_window_from_disk(window_path)
 
 
-timeli_res = timely.calculate_score(window_data)
+"""timeli_res = timely.calculate_score(window_data)
 
 print("\nScoring timeliness :\n" + "-" * 40)
 print(f"Score: {timeli_res['score']:.3f}")
 print(f"APR: {timeli_res['apr']:.3f}")
 print(f"MPR: {timeli_res['score']:.3f}")
 print(f"Coverage: {timeli_res['coverage']:.3f}")
-print(f"Fails: {timeli_res['details']['fail_counts']}")
+print(f"Fails: {timeli_res['details']['fail_counts']}")"""
 
 """
 scores= score_window(window_path)
@@ -58,7 +58,7 @@ for wid, metrics in all_scores.items():
 # Score it
 
 
-"""result = comp.calculate_score(window_data)
+result = comp.calculate_score(window_data)
 print("\nScoring completeness :\n" + "-" * 40)
 print(f"Score: {result['score']:.3f}")
 print(f"APR: {result['apr']:.3f}")
@@ -102,9 +102,9 @@ print(f"Score: {acc_res['score']:.3f}")
 print(f"APR: {acc_res['apr']:.3f}")
 print(f"MPR: {acc_res['score']:.3f}")
 print(f"Coverage: {acc_res['coverage']:.3f}")
-print(f"Fails: {acc_res['details']['fail_counts']}")"""
+print(f"Fails: {acc_res['details']['fail_counts']}")
 
-
+"""
 SAVE_CSV = True  # CSV likhna ho to True rakhein
 
 # ---- Init ----
@@ -181,3 +181,5 @@ if SAVE_CSV and all_results:
     print(f"\nSaved summary: {out_csv.resolve()}")
 
 print(f"\nDone. Processed {len(window_dirs)} window folders.")
+"""
+

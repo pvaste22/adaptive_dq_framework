@@ -47,8 +47,8 @@ def main():
         window_seconds=300,
         overlap=0.8,
         faulty_window_fraction=0.15,
-        timestamps_per_faulty_window=1, 
-        rows_fraction_per_timestamp=0.10,
+        timestamps_per_faulty_window=2, 
+        rows_fraction_per_timestamp=0.25,
         random_state=42,
     )
 

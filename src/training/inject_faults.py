@@ -293,11 +293,11 @@ def inject_faults_inplace_by_windows(
     df: pd.DataFrame,
     is_cell: bool,
     ts_col: Optional[str] = None,
-    window_seconds: int = 300,            # e.g., 5 minutes
-    overlap: float = 0.8,                 # 0.0..0.99 (e.g., 0.8 = 80% overlap)
-    faulty_window_fraction: float = 0.15, # 10–20% typical
-    timestamps_per_faulty_window: int = 1,
-    rows_fraction_per_timestamp: float = 0.1,  # within chosen timestamp group
+    window_seconds: int = 300,
+    overlap: float = 0.8,
+    faulty_window_fraction: float = 0.15,
+    timestamps_per_faulty_window: int = 2,
+    rows_fraction_per_timestamp: float = 0.3,
     random_state: int = 42,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -363,13 +363,18 @@ def inject_faults_inplace_by_windows(
 
             ftypes = []
             for rid in chosen_rows:
-                ftype = random.choice(FAULT_TYPES)
+                # Guarantee timeliness faults in every 3rd faulty window
+                if w_idx % 3 == 0:
+                    ftype = "timeliness"
+                else:
+                    ftype = random.choice(FAULT_TYPES)
+                
                 if ftype == "timeliness":
                     # ts_col से timestamp पढ़ें
-                    orig_ts = out.at[rid, ts]         # ts = आपके टाइम‑स्टैम्प कॉलम का नाम
+                    orig_ts = out.at[rid, ts]
                     orig_dt = pd.to_datetime(orig_ts, errors="coerce")
                     if pd.notna(orig_dt):
-                        # cadence से काफी बड़ा offset ±61/90/120s दें; negative offset monotonicity तोड़ देगा
+                        # cadence से काफी बड़ा offset ±61/90/120s दें
                         jitter = random.choice([-120, -90, -61, 61, 90, 120])
                         out.at[rid, ts] = orig_dt + pd.Timedelta(seconds=jitter)
                     else:
@@ -380,9 +385,6 @@ def inject_faults_inplace_by_windows(
                         updates = _cell_updates(out.loc[rid], ftype)
                     else:
                         updates = _ue_updates(out.loc[rid], ftype)
-                    #out.at[rid, "dq_fault_flag"] = True
-                    #out.at[rid, "dq_fault_type"] = ftype
-                    #out.at[rid, "dq_fault_window"] = int(w_idx)
                     for col, val in updates.items():
                         out.at[rid, col] = val
                 ftypes.append(ftype)
@@ -400,7 +402,6 @@ def inject_faults_inplace_by_windows(
     manifest = pd.DataFrame(manifest_rows).sort_values(["window_index","timestamp"])
     out.drop(columns=["dq_fault_flag","dq_fault_type","dq_fault_window"],
         errors="ignore", inplace=True)
-    #out.drop(columns=["unit_conversion_version"], errors="ignore", inplace=True)
     return out, manifest
 
 

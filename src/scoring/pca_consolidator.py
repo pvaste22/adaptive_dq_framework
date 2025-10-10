@@ -52,7 +52,7 @@ class PCAConsolidator:
             #keep_mask[:] = True
             #stds = stds.replace(0, 1e-9)
 
-        Xk = X.loc[:, stds.index]   
+        Xk = X.loc[:, stds[keep_mask].index]   
         mu = Xk.mean(axis=0).values
         sd = Xk.std(axis=0, ddof=0).values
         sd[sd == 0.0] = 1e-9  # epsilon
@@ -76,19 +76,19 @@ class PCAConsolidator:
         pc1 *= sign
 
         pc1_scores = Z.values @ pc1
-        pc1_min = float(np.nanmin(pc1_scores))
-        pc1_max = float(np.nanmax(pc1_scores))
-        if not np.isfinite(pc1_min) or not np.isfinite(pc1_max) or (pc1_max - pc1_min) <= 0:
+        pc1_mu = float(np.nanmean(pc1_scores))
+        pc1_sd = float(np.nanstd(pc1_scores, ddof=0))
+        if not np.isfinite(pc1_sd) or pc1_sd <= 0:
             # guard
-            pc1_min, pc1_max = -1.0, 1.0
+            pc1_sd = 1.0
 
         # store
         self.keep_cols_ = list(Xk.columns)
         self.col_means_ = mu
         self.col_stds_  = sd
         self.pc1_vec_   = pc1
-        self.pc1_min_   = pc1_min
-        self.pc1_max_   = pc1_max
+        self.pc1_mu_   = pc1_mu
+        self.pc1_sd_   = pc1_sd
         return self
 
     # ------------------- TRANSFORM ANY (TEST) WINDOWS ------------------- #
@@ -97,7 +97,7 @@ class PCAConsolidator:
         Transform new windows using TRAINING stats (no re-fit, no per-batch min-max).
         Returns label in [0,1]; by default **1 = good, 0 = bad** (good_is_high=True).
         """
-        required = [self.keep_cols_, self.col_means_, self.col_stds_, self.pc1_vec_, self.pc1_min_, self.pc1_max_]
+        required = [self.keep_cols_, self.col_means_, self.col_stds_, self.pc1_vec_, self.pc1_mu_, self.pc1_sd_]
         if any(v is None for v in required):
             raise RuntimeError("transform called before fit (or model not loaded).")
 
@@ -116,15 +116,11 @@ class PCAConsolidator:
         Z = (Xk.values - self.col_means_) / self.col_stds_
         pc1_scores = Z @ self.pc1_vec_
 
-        # absolute normalization with TRAINING range
-        denom = (self.pc1_max_ - self.pc1_min_)
-        if denom <= 0:
-            denom = 1e-9
-        badness = (pc1_scores - self.pc1_min_) / denom
-        badness = np.clip(badness, 0.0, 1.0)
-
-        # output orientation: 1 = good (requested) or 1 = bad
-        labels = 1.0 - badness if self.good_is_high else badness
+        # training stats reused: self.pc1_min_ = mean, self.pc1_max_ = std
+        pc1_mu  = self.pc1_mu_
+        pc1_sd  = self.pc1_sd_ if self.pc1_sd_ and self.pc1_sd_ > 0 else 1.0
+        pc1_z = (pc1_scores - self.pc1_mu_) / self.pc1_sd_
+        labels = -pc1_z if self.good_is_high else pc1_z
 
         if self.round_ndecimals is not None:
             labels = np.round(labels, self.round_ndecimals)

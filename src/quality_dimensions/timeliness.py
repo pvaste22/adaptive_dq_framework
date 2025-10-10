@@ -22,7 +22,7 @@ class TimelinessDimension(BaseDimension):
         # Pull cadence / resolution from self-calibrated dq_baseline (Phase-1)
         dq = self.get_dq_baseline() or {}
         self.cadence_sec: float = float(dq.get('cadence_sec', MEAS_INTERVAL_SEC))
-        self.ts_resolution_sec: float = float(dq.get('ts_resolution_sec', max(1.0, MEAS_INTERVAL_SEC)))
+        self.ts_resolution_sec: float = float(dq.get('ts_resolution_sec', 1.0))
         # Cols
         self.ts_col = COLUMN_NAMES.get('timestamp', 'timestamp')
         self.cell_col = COLUMN_NAMES.get('cell_entity', 'Viavi.Cell.Name')
@@ -138,7 +138,8 @@ class TimelinessDimension(BaseDimension):
         diffs_sec = (tsu - anchor).dt.total_seconds()
         k = np.rint(diffs_sec / self.cadence_sec).astype(int)
         snapped = anchor + pd.to_timedelta(k * self.cadence_sec, unit='s')
-        within_tol = (tsu - snapped).abs() <= pd.to_timedelta(self.ts_resolution_sec, unit='s')
+        tol_sec = min(self.ts_resolution_sec, 0.1 * self.cadence_sec)
+        within_tol = (tsu - snapped).abs() <= pd.to_timedelta(tol_sec, unit='s')
         grid_end   = grid[-1]
         snapped_ts = snapped
         valid_idx = snapped_ts <= grid_end
@@ -172,9 +173,9 @@ class TimelinessDimension(BaseDimension):
             if df.empty:
                 return None
             df['__ts'] = pd.to_datetime(df[self.ts_col], errors='coerce')
-            df = df.dropna(subset=['__ts']).sort_values([ent_col, '__ts'])
+            df = df.dropna(subset=['__ts'])
             # out-of-order if diff < 0; OK when diff >= 0
-            d = df.groupby(ent_col)['__ts'].diff().dt.total_seconds()
+            d = df.groupby(ent_col, sort=False)['__ts'].diff().dt.total_seconds()
             ok = d.ge(0).astype('float')
             ok[d.isna()] = np.nan 
             return ok.reset_index(drop=True)
