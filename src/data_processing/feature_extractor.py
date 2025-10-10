@@ -106,13 +106,19 @@ def _numeric_stats(df: pd.DataFrame, prefix: str) -> Dict[str, Any]:
         Supported statistics include mean, std, min, max, median,
         quantile at 0.25 and 0.75.
     """
+    IMPORTANT = {
+        'DRB.UEThpDl','DRB.UEThpUl','RRU.PrbUsedDl','RRU.PrbUsedUl',
+        'RRU.PrbAvailDl','RRU.PrbAvailUl','RRC.ConnMean','RRC.ConnMax',
+        'PEE.AvgPower','PEE.Energy_interval'
+    }
+    
     feats: Dict[str, Any] = {}
     if df is None or df.empty:
         return feats
     num = df.select_dtypes(include=[np.number]).copy()
     if num.empty:
         return feats
-    cols_keep = [c for c in num.columns if c not in UNRELIABLE_METRICS]
+    cols_keep = [c for c in num.columns if c in IMPORTANT and c not in UNRELIABLE_METRICS]
     num = num[cols_keep]
     if num.empty:
         return feats
@@ -254,6 +260,82 @@ def _time_cadence_features(df: pd.DataFrame, prefix: str, meas_sec: int | None) 
     feats[f'{prefix}_coverage_ratio'] = float(observed / theoretical) if theoretical > 0 else 1.0
     return feats
 
+def _grid_coverage(cell: pd.DataFrame, ue: pd.DataFrame, cadence_sec: int, tol_sec: int) -> Dict[str, float]:
+    feats = {}
+    ts_col = COLUMN_NAMES.get('timestamp', 'timestamp')
+    parts = []
+    for df in (cell, ue):
+        if df is not None and not df.empty and ts_col in df.columns:
+            parts.append(pd.to_datetime(df[ts_col], errors='coerce').dropna())
+    if not parts:
+        return {'t2_expected_slots': 0, 't2_aligned_slots': 0, 't2_missing_slots': 0}
+    tsu = pd.to_datetime(pd.Series(pd.concat(parts).unique())).sort_values()
+    step = pd.to_timedelta(cadence_sec, unit='s')
+    anchor = tsu.iloc[0].floor(f'{int(cadence_sec)}S')
+    grid = pd.date_range(start=anchor, end=tsu.iloc[-1], freq=step)
+    expected = len(grid)
+    k = np.rint((tsu - anchor).dt.total_seconds() / cadence_sec).astype(int)
+    snapped = anchor + pd.to_timedelta(k * cadence_sec, unit='s')
+    tol = pd.to_timedelta(min(tol_sec, int(0.1*cadence_sec)), unit='s')
+    within = (tsu - snapped).abs() <= tol
+    covered = len(pd.unique(k[within & (snapped <= grid[-1])]))
+    feats['t2_expected_slots'] = float(expected)
+    feats['t2_aligned_slots']  = float(covered)
+    feats['t2_missing_slots']  = float(max(expected - covered, 0))
+    return feats
+
+def _recon_window_ratios(cell: pd.DataFrame, ue: pd.DataFrame) -> Dict[str, float]:
+    ts = COLUMN_NAMES.get('timestamp','timestamp')
+    out = {}
+    if any(df is None or df.empty for df in (cell, ue)) or ts not in cell.columns or ts not in ue.columns:
+        return out
+    c = cell[[ts,'DRB.UEThpDl','DRB.UEThpUl','RRU.PrbUsedDl','RRU.PrbUsedUl']].copy()
+    u = ue  [[ts,'DRB.UEThpDl','DRB.UEThpUl','RRU.PrbUsedDl','RRU.PrbUsedUl']].copy()
+    for df in (c,u):
+        df[ts] = pd.to_datetime(df[ts], errors='coerce')
+    cg = c.dropna(subset=[ts]).groupby(ts).sum(numeric_only=True)
+    ug = u.dropna(subset=[ts]).groupby(ts).sum(numeric_only=True)
+    g = cg.join(ug, how='inner', lsuffix='_cell', rsuffix='_ue')
+    if g.empty: return out
+    # DL/UL throughput ratios
+    if (g['DRB.UEThpDl_cell']>0).any():
+        r = (g['DRB.UEThpDl_ue']/g['DRB.UEThpDl_cell']).replace([np.inf,-np.inf],np.nan).dropna()
+        if not r.empty: out['recon_thp_dl_median'] = float(r.median())
+    if (g['DRB.UEThpUl_cell']>0).any():
+        r = (g['DRB.UEThpUl_ue']/g['DRB.UEThpUl_cell']).replace([np.inf,-np.inf],np.nan).dropna()
+        if not r.empty: out['recon_thp_ul_median'] = float(r.median())
+    # DL/UL PRB ratios
+    if (g['RRU.PrbUsedDl_cell']>0).any():
+        r = (g['RRU.PrbUsedDl_ue']/g['RRU.PrbUsedDl_cell']).replace([np.inf,-np.inf],np.nan).dropna()
+        if not r.empty: out['recon_prb_dl_median'] = float(r.median())
+    if (g['RRU.PrbUsedUl_cell']>0).any():
+        r = (g['RRU.PrbUsedUl_ue']/g['RRU.PrbUsedUl_cell']).replace([np.inf,-np.inf],np.nan).dropna()
+        if not r.empty: out['recon_prb_ul_median'] = float(r.median())
+    return out
+
+def _violation_counts(cell: pd.DataFrame) -> Dict[str,int]:
+    out = {}
+    if cell is None or cell.empty: return out
+    to_num = lambda s: pd.to_numeric(s, errors='coerce')
+    # PRB used <= avail (DL/UL)
+    for side in ('Dl','Ul'):
+        u = to_num(cell.get(f'RRU.PrbUsed{side}', np.nan))
+        a = to_num(cell.get(f'RRU.PrbAvail{side}', np.nan))
+        if u is not None and a is not None:
+            m = (u > a) & u.notna() & a.notna()
+            out[f'viol_prb_used_gt_avail_{side.lower()}'] = int(m.sum())
+    # ConnMean <= ConnMax
+    if {'RRC.ConnMean','RRC.ConnMax'}.issubset(cell.columns):
+        cm = to_num(cell['RRC.ConnMean']); cx = to_num(cell['RRC.ConnMax'])
+        out['viol_conn_mean_gt_max_cnt'] = int((cm > cx).sum())
+    # Thp>0 ⇒ PRB>0 (DL/UL)
+    for side in ('Dl','Ul'):
+        thp = to_num(cell.get(f'DRB.UEThp{side}', np.nan))
+        prb = to_num(cell.get(f'RRU.PrbUsed{side}', np.nan))
+        if thp is not None and prb is not None:
+            m = (thp > 0.001) & (prb <= 0) & thp.notna() & prb.notna()
+            out[f'viol_thp_pos_prb_zero_{side.lower()}'] = int(m.sum())
+    return out
 
 def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     """Generate a flattened feature representation for a single window.
@@ -284,7 +366,9 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
         ts = pd.to_datetime(metadata['window_start_time'], unit='s', errors='coerce')
     elif not cell.empty and COLUMN_NAMES.get('timestamp') in cell.columns:
         first_ts = cell[COLUMN_NAMES['timestamp']].iloc[0]
-        ts = pd.to_datetime(first_ts, unit='s', errors='coerce')
+        ts = pd.to_datetime(first_ts, utc=True, errors='coerce')
+        if pd.isna(ts):
+            ts = pd.to_datetime(first_ts, unit='s', utc=True, errors='coerce')
     if ts is not None and not pd.isna(ts):
         feats['meta_hour_of_day'] = int(ts.hour)
         feats['meta_day_of_week'] = int(ts.dayofweek)  # Monday=0
@@ -301,10 +385,14 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
         from common.constants import MEAS_INTERVAL_SEC
         meas_sec = int(MEAS_INTERVAL_SEC)
     except Exception:
+        meas_sec = 60
         pass
 
     feats.update(_time_cadence_features(cell, 'cell', meas_sec))
     feats.update(_time_cadence_features(ue, 'ue', meas_sec))
+    cad, tol = meas_sec, None
+    tol = max(1, int(0.1*cad))
+    feats.update(_grid_coverage(cell, ue, cad, tol))
 
     #completeness features
     feats.update(_null_density(cell, 'cell'))
@@ -312,8 +400,12 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
 
     #Ratio features tied to Validity/Accuracy
     feats.update(_ratio_features(cell, ue))
+    feats.update(_violation_counts(cell))
     # consistency energy-power feature
     feats.update(_energy_consistency(cell))
+    feats.update(_recon_window_ratios(cell, ue))
+
+
     # Numeric summaries
     feats.update(_numeric_stats(cell, 'cell'))
     feats.update(_numeric_stats(ue, 'ue'))

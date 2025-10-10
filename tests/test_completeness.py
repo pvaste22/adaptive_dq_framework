@@ -11,7 +11,7 @@ import csv
 
 # Load one window
 windows_dir = Path('data/processed/training/v0/windows')
-window_path = windows_dir / 'window_000000_20221231_160000'   
+window_path = windows_dir / 'window_000004_20221231_160000'   
 # First window  window_009908_20230107_130800  window_010037_20230107_151700  window_000000_20221231_160000  window_009813_20230107_113300 
 #  window_010057_20230107_153700 window_000345_20221231_214500
 #  window_002562_20230102_104200   window_005090_20230104_045000  window_008359_20230106_111900 window_000121_20221231_180100 

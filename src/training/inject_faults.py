@@ -70,7 +70,7 @@ def _inject_cell_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame
                 orig_val = pd.to_numeric(row[col], errors="coerce")
                 if pd.notna(orig_val):
                     # random large jitter ±61, ±90, ±120 s
-                    jitter = random.choice([-120, -90, -61, 61, 90, 120])
+                    jitter = random.choice([-240, -180, -120, 120, 180, 240])
                     row[col] = orig_val + jitter
                 else:
                     # for string timestamps, append suffix
@@ -130,7 +130,7 @@ def _inject_ue_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame:
                 orig_val = pd.to_numeric(row[col], errors="coerce")
                 if pd.notna(orig_val):
                     # random large jitter ±61, ±90, ±120 s
-                    jitter = random.choice([-120, -90, -61, 61, 90, 120])
+                    jitter = random.choice([-240, -180, -120, 120, 180, 240])
                     row[col] = orig_val + jitter
                 else:
                     # for string timestamps, append suffix
@@ -240,7 +240,8 @@ def _mutate_row_values_ue(row: pd.Series, fault_type: str) -> pd.Series:
 def _cell_updates(row, fault_type):
     u = {}
     if fault_type == "missing":
-        for c in ["RRU.PrbAvailDl","RRU.PrbAvailUl","DRB.UEThpDl","DRB.UEThpUl"]:
+        for c in ["RRU.PrbAvailDl","RRU.PrbAvailUl","DRB.UEThpDl","DRB.UEThpUl",
+                  "RRU.PrbUsedDl","RRU.PrbUsedUl","RRC.ConnMean"]:
             if c in row: u[c] = np.nan
     elif fault_type == "out_of_range":
         for c in ["RRU.PrbTotDl","RRU.PrbTotUl"]:
@@ -249,9 +250,11 @@ def _cell_updates(row, fault_type):
             if c in row and pd.notna(row[c]): u[c] = float(row[c]) * 15.0
     elif fault_type == "inconsistent":
         if "RRU.PrbUsedDl" in row and "RRU.PrbAvailDl" in row:
-            u["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 10
+            u["RRU.PrbUsedDl"] = row["RRU.PrbAvailDl"] + 25
         if "RRU.PrbUsedUl" in row and "RRU.PrbAvailUl" in row:
-            u["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 10
+            u["RRU.PrbUsedUl"] = row["RRU.PrbAvailUl"] + 25
+        if "PEE.AvgPower" in row:
+            u["PEE.AvgPower"] = float(row["PEE.AvgPower"]) * 0.1
         if "RRC.ConnMean" in row:
             u["RRC.ConnMean"] = 3
     elif fault_type == "timeliness":
@@ -260,7 +263,7 @@ def _cell_updates(row, fault_type):
         if ts is not None and pd.notna(ts):
             ts = pd.to_datetime(ts, utc=True, errors="coerce")
             if pd.notna(ts):
-                jitter = random.choice([-120, -90, -61, 61, 90, 120])  # secs
+                jitter = random.choice([-240, -180, -120, 120, 180, 240]) # secs
                 u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)            
     return u
 
@@ -285,7 +288,7 @@ def _ue_updates(row, fault_type):
         if ts is not None and pd.notna(ts):
             ts = pd.to_datetime(ts, utc=True, errors="coerce")
             if pd.notna(ts):
-                jitter = random.choice([-120, -90, -61, 61, 90, 120])  # secs
+                jitter = random.choice([-240, -180, -120, 120, 180, 240])  # secs
                 u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)           
     return u
 
@@ -375,7 +378,7 @@ def inject_faults_inplace_by_windows(
                     orig_dt = pd.to_datetime(orig_ts, errors="coerce")
                     if pd.notna(orig_dt):
                         # cadence से काफी बड़ा offset ±61/90/120s दें
-                        jitter = random.choice([-120, -90, -61, 61, 90, 120])
+                        jitter = random.choice([-240, -180, -120, 120, 180, 240])
                         out.at[rid, ts] = orig_dt + pd.Timedelta(seconds=jitter)
                     else:
                         # string timestamp है तो suffix जोड़ दें
