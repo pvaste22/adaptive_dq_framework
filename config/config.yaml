@@ -141,13 +141,25 @@ drift_detection:
     - "DRB.UECqiDl"
 
 # Machine Learning Configuration
-machine_learning:
-  enabled: false  # Enable in Phase 2
+ML_Training:
+  enabled: true  # Enable in Phase 2
   model_type: "xgboost"
   hyperparameter_tuning: true
   validation_split: 0.2
   cross_validation_folds: 5
   artifact_versioning: true
+  data_file: ./data/processed/training/v0/train_labels.parquet
+  out_root: ./data/artifacts/models
+  label_col: label
+  id_cols: [window_id] 
+  min_target_mae: 0.05 
+  max_trials: 50
+  model_version: "1.1.0"
+  update_latest_symlink: true
+  tree_method: "hist"
+  use_scaler: true
+  drop_cols: [window_id, meta_window_id, meta_start_time, meta_end_time]
+
 
 # External Configuration Files
 external_configs:

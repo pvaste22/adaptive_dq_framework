@@ -1,4 +1,17 @@
 {
+  "best_params": {
+    "booster": "dart",
+    "lambda": 0.0035803696645730176,
+    "alpha": 5.787654084750208e-06,
+    "max_depth": 8,
+    "learning_rate": 0.13092594447263453,
+    "subsample": 0.999636460654121,
+    "colsample_bytree": 0.8057826613846719,
+    "num_boost_round": 350
+  },
+  "best_mae": 0.02916650887523345,
+  "best_r2": 0.9448943457612076,
+  "data_file": "data/processed/training/v0/train_labels.parquet",
   "features": [
     "meta_hour_of_day",
     "meta_day_of_week",
@@ -146,5 +159,17 @@
     "ue_RRU.PrbUsedDl_median",
     "ue_RRU.PrbUsedDl_q25",
     "ue_RRU.PrbUsedDl_q75"
-  ]
+  ],
+  "drop_cols": [
+    "window_id"
+  ],
+  "label_col": "label",
+  "use_scaler": true,
+  "run_dir": "data/artifacts/models/v1.0.0/20251011_201954_7fed209602",
+  "timestamp": "20251011_201954",
+  "fingerprint": "7fed209602",
+  "version": "1.0.0",
+  "git_commit": "8801ef7",
+  "data_md5": "dbd676b2a7036b2eacc13dee1b46c6d8",
+  "features_md5": "df51dd354e30ea3ff56276cbc3dcd6c0"
 }
