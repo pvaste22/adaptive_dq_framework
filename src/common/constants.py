@@ -260,3 +260,38 @@ RECONCILIATION_CONFIG = {
     'min_samples': 30,
     'description': 'Minimum samples needed for UE-cell throughput ratio bands'
 }
+
+KPM_TO_CANON = {
+    # Cell metrics (add what's in your CSVs)
+    #"timestamp": "timestamp",
+    "Viavi.Cell.Name": "Viavi.Cell.Name",
+    "DRB.UEThpDl": "DRB.UEThpDl",
+    "DRB.UEThpUl": "DRB.UEThpUl",
+    "RRU.PrbUsedDl": "RRU.PrbUsedDl",
+    "RRU.PrbUsedUl": "RRU.PrbUsedUl",
+    "RRU.PrbAvailDl": "RRU.PrbAvailDl",
+    "RRU.PrbAvailUl": "RRU.PrbAvailUl",
+    "RRU.PrbTotUl":   "RRU.PrbTotUl",
+    "RRU.PrbTotDl":   "RRU.PrbTotDl",
+    "RRU.MaxLayerDlMimo": "RRU.MaxLayerDlMimo",
+    "CARR.AverageLayersDl": "CARR.AverageLayersDl",
+    "RRC.ConnMean": "RRC.ConnMean",
+    "RRC.ConnMax": "RRC.ConnMax",
+    "QosFlow.TotPdcpPduVolumeUl": "QosFlow.TotPdcpPduVolumeUl",
+    "QosFlow.TotPdcpPduVolumeDl": "QosFlow.TotPdcpPduVolumeDl",
+    "PEE.AvgPower":   "PEE.AvgPower",
+    "PEE.Energy":     "PEE.Energy",
+
+    # UE metrics
+    #"timestamp": "timestamp",
+    "Viavi.UE.Name": "Viavi.UE.Name",
+    "DRB.UECqiUl": "DRB.UECqiUl",
+    "DRB.UEThpUl": "DRB.UEThpUl",
+    "RRU.PrbUsedUl": "RRU.PrbUsedUl",
+    "TB.TotNbrUl": "TB.TotNbrUl",
+    "DRB.UECqiDl": "DRB.UECqiDl",
+    "DRB.UEThpDl": "DRB.UEThpDl",
+    "RRU.PrbUsedDl": "RRU.PrbUsedDl",
+    "TB.TotNbrDl": "TB.TotNbrDl",
+    
+}

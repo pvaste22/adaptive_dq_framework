@@ -12,3 +12,4 @@ pyarrow==14.0.1
 ricxappframe==3.2.1
 msgpack==1.0.5
 mdclogpy==1.1.4
+confluent-kafka>=2.4,<3

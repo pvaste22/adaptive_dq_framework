@@ -87,6 +87,15 @@ dataset_expectations:
       qos_flow_has_1s_semantics: true
       mobility_metrics_missing: true
 
+kafka:
+  brokers: "kafka:9092"
+  in_topic: "e2-data"          # your replay topic
+  out_topic: "dq_scores"
+  group_id: "dqscore-xapp"
+  acks: "all"
+  idempotence: true
+  compression: "lz4"
+
 # Processing Configuration
 processing:
   windowing:
