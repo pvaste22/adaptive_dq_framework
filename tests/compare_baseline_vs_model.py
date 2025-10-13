@@ -26,7 +26,7 @@ from pathlib import Path
     return Path(metas[0]).parent
 """
 run_dir = Path("data/artifacts/models/latest").resolve()
-print(run_dir)
+print("latest symlink: ",run_dir)
 meta = json.loads((run_dir / "meta.json").read_text())
 
 

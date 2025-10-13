@@ -295,3 +295,5 @@ KPM_TO_CANON = {
     "TB.TotNbrDl": "TB.TotNbrDl",
     
 }
+
+CANON_TO_KPM = {v: k for k, v in KPM_TO_CANON.items()}
