@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Dict, Any, Iterable
+from venv import logger
 
 import pandas as pd
 import numpy as np
@@ -18,7 +19,7 @@ except ImportError:
         'cell_entity': 'cell_entity',
         'ue_entity': 'ue_entity',
     }
-    feats_dir = Path('./artifacts')
+    feats_dir = Path('./data/artifacts')
     UNRELIABLE_METRICS = {"TB.TotNbrDl", "TB.TotNbrUl"}
 
 FEATURES_SCHEMA_PATH = feats_dir / "features" / "features_schema.json"
@@ -360,6 +361,9 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     cell = window_data.get('cell_data', pd.DataFrame())
     ue = window_data.get('ue_data', pd.DataFrame())
     metadata = window_data.get('metadata', {}) or {}
+    logger.debug(f"[FEATURE_EXTRACT] Cell shape: {cell.shape}, UE shape: {ue.shape}")
+    if cell.empty and ue.empty:
+        logger.warning("[FEATURE_EXTRACT] Both cell and UE dataframes are EMPTY!")
     feats: Dict[str, Any] = {}
     ts = None
     if 'window_start_time' in metadata:
@@ -409,6 +413,11 @@ def make_feature_row(window_data: Dict[str, Any]) -> Dict[str, Any]:
     # Numeric summaries
     feats.update(_numeric_stats(cell, 'cell'))
     feats.update(_numeric_stats(ue, 'ue'))
+    if not feats:
+        logger.error("[FEATURE_EXTRACT] No features generated!")
+    zero_features = [k for k, v in feats.items() if v == 0]
+    if len(zero_features) > len(feats) * 0.8:  # >80% zeros
+        logger.warning(f"[FEATURE_EXTRACT] {len(zero_features)}/{len(feats)} features are zero")
     return feats
 
 __all__ = ['make_feature_row']

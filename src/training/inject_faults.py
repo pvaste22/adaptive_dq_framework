@@ -373,11 +373,11 @@ def inject_faults_inplace_by_windows(
                     ftype = random.choice(FAULT_TYPES)
                 
                 if ftype == "timeliness":
-                    # ts_col से timestamp पढ़ें
+                    # ts_col  timestamp 
                     orig_ts = out.at[rid, ts]
                     orig_dt = pd.to_datetime(orig_ts, errors="coerce")
                     if pd.notna(orig_dt):
-                        # cadence से काफी बड़ा offset ±61/90/120s दें
+                        # cadence offset ±61/90/120s 
                         jitter = random.choice([-240, -180, -120, 120, 180, 240])
                         out.at[rid, ts] = orig_dt + pd.Timedelta(seconds=jitter)
                     else:

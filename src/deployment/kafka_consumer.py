@@ -218,6 +218,25 @@ def build_consumer():
         "max.poll.interval.ms": 300000,
     })
 
+
+def validate_features(features: Dict[str, float], predictor: DQScorePredictor):
+    """Diagnostic: Check feature alignment"""
+    expected_features = set(predictor.feature_names or [])
+    actual_features = set(features.keys())
+    
+    missing = expected_features - actual_features
+    extra = actual_features - expected_features
+    
+    if missing:
+        logger.warning(f"Missing {len(missing)} features: {list(missing)[:5]}...")
+    if extra:
+        logger.info(f"Extra {len(extra)} features (will be ignored): {list(extra)[:5]}...")
+    
+    # Check for NaN/inf values
+    bad_values = {k: v for k, v in features.items() if not np.isfinite(v)}
+    if bad_values:
+        logger.warning(f"Non-finite values in features: {bad_values}")
+
 # ============ WINDOW PROCESSOR ============
 def process_windows(cell_buffer: TimeWindowBuffer, 
                    ue_buffer: TimeWindowBuffer,
@@ -285,6 +304,7 @@ def process_windows(cell_buffer: TimeWindowBuffer,
         logger.info(f" Extracted {len(features)} features")
         
         # Predict DQ score
+        validate_features(features, predictor)
         dq_score = predictor.predict(features)
         logger.info(f" Predicted DQ Score: {dq_score:.4f}")
         

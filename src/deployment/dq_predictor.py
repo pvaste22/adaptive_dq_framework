@@ -64,12 +64,12 @@ class DQScorePredictor:
             
             if model_pkl.exists():
                 self.model = joblib.load(model_pkl)
-                logger.info("✓ Loaded model from joblib")
+                logger.info("Loaded model from joblib")
             elif model_bin.exists():
                 import xgboost as xgb
                 self.model = xgb.Booster()
                 self.model.load_model(str(model_bin))
-                logger.info("✓ Loaded model from binary")
+                logger.info("Loaded model from binary")
             else:
                 raise FileNotFoundError("No model file found")
             
@@ -77,7 +77,7 @@ class DQScorePredictor:
             scaler_path = self.model_dir / "scaler.joblib"
             if scaler_path.exists():
                 self.scaler = joblib.load(scaler_path)
-                logger.info("✓ Loaded scaler")
+                logger.info("Loaded scaler")
             
             # Load metadata
             meta_path = self.model_dir / "meta.json"
@@ -85,7 +85,7 @@ class DQScorePredictor:
                 with open(meta_path, 'r') as f:
                     self.metadata = json.load(f)
                     self.feature_names = self.metadata.get('features', [])
-                logger.info(f"✓ Loaded metadata ({len(self.feature_names)} features)")
+                logger.info(f" Loaded metadata ({len(self.feature_names)} features)")
             else:
                 logger.warning("No metadata found - feature order may be incorrect!")
             
@@ -130,8 +130,9 @@ class DQScorePredictor:
             # Predict
             #if hasattr(self.model, 'predict'):
             try:
-                # Sklearn-style interface (joblib)
-                score = float(self.model.predict(X)[0])
+                if hasattr(self.model, 'predict_proba'):
+                    # Sklearn-style interface (joblib)
+                    score = float(self.model.predict(X)[0])
             #else:
             except (TypeError, AttributeError):
                 # XGBoost Booster interface
@@ -146,6 +147,8 @@ class DQScorePredictor:
             
         except Exception as e:
             logger.error(f"Prediction failed: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
     def predict_batch(self, features_list: List[Dict[str, float]]) -> List[float]:

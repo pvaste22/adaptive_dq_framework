@@ -30,11 +30,25 @@ if LABEL_COL not in df.columns:
     raise ValueError(f"Label column '{LABEL_COL}' not found")
 y = df[LABEL_COL].astype(float)
 X = df.drop(columns=[LABEL_COL]+DROP_COLS, errors="ignore")
-X = X.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
-bad_cols = [c for c in X.columns if X[c].isna().all() or X[c].nunique(dropna=True) <= 1]
+print("before drop: ",df.columns)
+print("after drop: ",X.columns)
+#X = X.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+#bad_cols = [c for c in X.columns if X[c].isna().all() or X[c].nunique(dropna=True) <= 1]
+# Identify problematic columns WITH REASONS
+all_nan_cols = [c for c in X.columns if X[c].isna().all()]
+constant_cols = [c for c in X.columns if X[c].nunique(dropna=True) <= 1]
+near_zero_var_cols = [c for c in X.columns if X[c].std(skipna=True) < 1e-10]
+print(f"\n[FEATURE DROP ANALYSIS]")
+print(f"  All-NaN columns: {len(all_nan_cols)} - {all_nan_cols[:5]}")
+print(f"  Constant columns: {len(constant_cols)} - {constant_cols[:5]}")
+print(f"  Near-zero variance: {len(near_zero_var_cols)} - {near_zero_var_cols[:5]}")
+# Drop ONLY truly problematic ones
+bad_cols = list(set(all_nan_cols + constant_cols))
+
 if bad_cols:
-    print("Dropping non-informative cols:", bad_cols)
     X = X.drop(columns=bad_cols)
+    print(f"Dropping non-informative  {len(bad_cols)} total cols:", bad_cols)
+    
 
 # --- split + optional scaling ---
 X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)

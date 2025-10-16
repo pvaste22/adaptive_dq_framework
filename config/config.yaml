@@ -163,7 +163,7 @@ ML_Training:
   id_cols: [window_id] 
   min_target_mae: 0.05 
   max_trials: 50
-  model_version: "1.1.0"
+  model_version: "1.2.0"
   update_latest_symlink: true
   tree_method: "hist"
   use_scaler: true
