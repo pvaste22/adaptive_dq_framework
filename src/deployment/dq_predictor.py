@@ -130,11 +130,11 @@ class DQScorePredictor:
             # Predict
             #if hasattr(self.model, 'predict'):
             try:
-                if hasattr(self.model, 'predict_proba'):
-                    # Sklearn-style interface (joblib)
-                    score = float(self.model.predict(X)[0])
+                #if hasattr(self.model, 'predict_proba'):
+                # Sklearn-style interface (joblib)
+                score = float(self.model.predict(X)[0])
             #else:
-            except (TypeError, AttributeError):
+            except Exception as e:
                 # XGBoost Booster interface
                 import xgboost as xgb
                 dmatrix = xgb.DMatrix(X, feature_names=self.feature_names)
@@ -143,7 +143,7 @@ class DQScorePredictor:
             # Clip to valid range [0, 1]
             score = np.clip(score, 0.0, 1.0)
             
-            return score
+            return float(score)
             
         except Exception as e:
             logger.error(f"Prediction failed: {e}")

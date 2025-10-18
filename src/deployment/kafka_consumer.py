@@ -44,7 +44,7 @@ class TimeWindowBuffer:
     def __init__(self, window_size_sec: int = 300):
         self.window_size = timedelta(seconds=window_size_sec)
         # {entity_id: deque of (timestamp, row_dict)}
-        self.buffers: Dict[str, deque] = defaultdict(lambda: deque(maxlen=2000))
+        self.buffers: Dict[str, deque] = defaultdict(lambda: deque())
         
     def add_rows(self, entity_type: str, rows: List[Dict], converter: UnitConverter):
         """Add rows to buffer with unit conversion"""
@@ -62,14 +62,16 @@ class TimeWindowBuffer:
                 entity_id = row.get("Viavi.UE.Name")
                 
             if entity_id:
-                self.buffers[entity_id].append((ts, row))
+                #self.buffers[entity_id].append((ts, row))
+                kafka_ts_ms = row.get("kafka_ts_ms")
+                self.buffers[entity_id].append((ts, kafka_ts_ms, row))
     
     def get_window_data(self, entity_id: str, end_time: datetime) -> List[Dict]:
         """Get all rows in window [end_time - window_size, end_time]"""
         start_time = end_time - self.window_size
         
         window_data = []
-        for ts, row in self.buffers[entity_id]:
+        for ts, kafka_ts_ms, row in self.buffers[entity_id]:
             if start_time <= ts <= end_time:
                 window_data.append(row)
         
@@ -83,7 +85,7 @@ class TimeWindowBuffer:
         """Remove data older than cutoff"""
         for entity_id in list(self.buffers.keys()):
             while self.buffers[entity_id]:
-                ts, _ = self.buffers[entity_id][0]
+                ts, _, _ = self.buffers[entity_id][0]
                 if ts < cutoff_time:
                     self.buffers[entity_id].popleft()
                 else:
@@ -231,11 +233,14 @@ def validate_features(features: Dict[str, float], predictor: DQScorePredictor):
         logger.warning(f"Missing {len(missing)} features: {list(missing)[:5]}...")
     if extra:
         logger.info(f"Extra {len(extra)} features (will be ignored): {list(extra)[:5]}...")
-    
+    numeric_features = {
+        k: v for k, v in features.items() 
+        if isinstance(v, (int, float, np.integer, np.floating))
+    }
     # Check for NaN/inf values
-    bad_values = {k: v for k, v in features.items() if not np.isfinite(v)}
+    bad_values = {k: v for k, v in numeric_features.items() if not np.isfinite(v)}
     if bad_values:
-        logger.warning(f"Non-finite values in features: {bad_values}")
+        logger.warning(f"Non-finite values in features: {bad_values}  features: {list(bad_values.keys())[:5]}...")
 
 # ============ WINDOW PROCESSOR ============
 def process_windows(cell_buffer: TimeWindowBuffer, 
@@ -275,7 +280,17 @@ def process_windows(cell_buffer: TimeWindowBuffer,
         #logger.warning(f"Insufficient data for window {window_id} - skipping")
         #return
     logger.info(f"Window data: {len(all_cell_rows)} cell rows, {len(all_ue_rows)} UE rows")
-    
+
+    all_rows = (all_cell_rows or []) + (all_ue_rows or [])
+    #window_start = current_time - timedelta(seconds=WINDOW_SIZE_SEC)
+    window_end = current_time
+    if all_rows:
+        last_event_ts = max(datetime.fromisoformat(r["timestamp"].replace('Z','+00:00')) for r in all_rows).astimezone(timezone.utc)
+        # max kafka ingestion time seen in window
+        last_kafka_ts_ms = max(int(r.get("kafka_ts_ms", 0)) for r in all_rows if "kafka_ts_ms" in r)
+    else:
+        last_event_ts = None
+        last_kafka_ts_ms = None
     try:
         # Convert to DataFrames
         cell_df = pd.DataFrame(all_cell_rows)
@@ -293,9 +308,11 @@ def process_windows(cell_buffer: TimeWindowBuffer,
             'metadata': {
                 'window_id': window_id,
                 'window_start_time': window_start.timestamp(),
-                'window_end_time': current_time.timestamp(),
+                'window_end_time': window_end.timestamp(),
                 'start_time': window_start.isoformat(),
-                'end_time': current_time.isoformat(),
+                'end_time': window_end.isoformat(),
+                'last_event_ts':last_event_ts.isoformat() if last_event_ts else None,
+                'last_kafka_ts_ms': last_kafka_ts_ms,
             }
         }
         
@@ -309,6 +326,10 @@ def process_windows(cell_buffer: TimeWindowBuffer,
         logger.info(f" Predicted DQ Score: {dq_score:.4f}")
         
         # Publish score
+        publish_ts_ms = int(time.time() * 1000)
+        latency_ms = None
+        if last_kafka_ts_ms:
+            latency_ms = max(0, publish_ts_ms - int(last_kafka_ts_ms))
         publisher.publish_score(
             window_id=window_id,
             start_time=window_start.isoformat(),
@@ -319,6 +340,10 @@ def process_windows(cell_buffer: TimeWindowBuffer,
                 'ue_entities': len(ue_entities),
                 'cell_rows': len(all_cell_rows),
                 'ue_rows': len(all_ue_rows),
+                'last_event_ts': last_event_ts.isoformat() if last_event_ts else None,
+                'last_kafka_ts_ms': last_kafka_ts_ms,
+                'publish_ts_ms': publish_ts_ms,
+                'latency_ms': latency_ms,
             }
         )
         logger.info(f" Published score to '{OUT_TOPIC}' topic")
@@ -370,11 +395,11 @@ def consume_and_predict():
     
     msg_count = 0
     last_tick_time = time.time()
+
     
     try:
         while _running:
-            msg = consumer.poll(0.5)
-            
+            msg = consumer.poll(0.5)    
             if msg is None:
                 # Check if time to process window
                 current_time = time.time()
@@ -388,6 +413,7 @@ def consume_and_predict():
                 continue
             
             try:
+                _, kafka_ts_ms = msg.timestamp()
                 msg_count += 1
                 val = msg.value()
                 obj = _decode_value(val)
@@ -397,7 +423,8 @@ def consume_and_predict():
                 
                 if entity and rows:
                     logger.debug(f"[msg #{msg_count}] {entity.upper()}: {len(rows)} rows")
-                    
+                    for r in rows:
+                        r["kafka_ts_ms"] = int(kafka_ts_ms)
                     # Add to appropriate buffer (conversion happens here)
                     if entity == "cell":
                         cell_buffer.add_rows("cell", rows, converter)

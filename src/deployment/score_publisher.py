@@ -62,7 +62,7 @@ class ScorePublisher:
                 'dq_score': float(dq_score),
                 'timestamp': time.time(),
             }
-            
+            message['publish_ts_ms'] = int(time.time() * 1000)
             # Add optional metadata
             if metadata:
                 message['metadata'] = metadata
@@ -73,6 +73,7 @@ class ScorePublisher:
             # Publish
             self.producer.produce(
                 self.topic,
+                key=window_id.encode('utf-8'),
                 value=msg_bytes,
                 callback=self._delivery_callback
             )
