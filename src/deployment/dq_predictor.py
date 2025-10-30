@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional
+import os
 
 from common.logger import get_phase4_logger
 from common.constants import PATHS
@@ -29,24 +30,38 @@ class DQScorePredictor:
         # Auto-detect latest model
         if model_dir is None:
             models_root = PATHS['artifacts'] / 'models'
-            latest_link = models_root / 'latest'
+            env_model = os.getenv("DQ_MODEL_DIR")
+            if env_model:
+                model_dir = Path(env_model)
+            if model_dir is None:
+                ws = os.getenv("WINDOW_SIZE_SEC")
+                if ws:
+                    cand = models_root / f"latest_{ws}s"
+                    if cand.exists():
+                        model_dir = cand
+            if model_dir is None:
+                latest_link = models_root / 'latest'
             
-            if latest_link.exists():
-                # Read symlink target
-                if latest_link.is_symlink():
-                    model_dir = latest_link.resolve()
-                elif latest_link.is_dir():
-                    run_id_file = latest_link / "run_id.txt"
-                    if run_id_file.exists():
-                        with open(run_id_file, 'r') as f:
-                            model_id = f.read().strip()
-                        model_dir = models_root / model_id
-                    else:
-                        model_dir = latest_link
-            else:
-                with open(latest_link, 'r') as f:
-                    rel_path = f.read().strip()
-                model_dir = models_root / rel_path
+                if latest_link.exists():
+                    # Read symlink target
+                    if latest_link.is_symlink():
+                        model_dir = latest_link.resolve()
+                    elif latest_link.is_dir():
+                        run_id_file = latest_link / "run_id.txt"
+                        if run_id_file.exists():
+                            with open(run_id_file, 'r') as f:
+                                model_id = f.read().strip()
+                            model_dir = models_root / model_id
+                        else:
+                            model_dir = latest_link
+            if model_dir is None:
+                 raise FileNotFoundError(
+                    "No model artifacts found. Set DQ_MODEL_DIR or create latest_<Ws>s / latest symlink."
+                )
+            #else:
+                #with open(latest_link, 'r') as f:
+                    #rel_path = f.read().strip()
+                #model_dir = models_root / rel_path
             #else:
                 #raise FileNotFoundError("No model found. Train model first!")
         

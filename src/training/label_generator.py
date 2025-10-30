@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
+import time
 
 import pandas as pd
 
@@ -121,6 +122,7 @@ def generate_labeled_dataset(
     output_parquet: str,
     pca_mode: str = "fit",                 # "fit" (train on full set) or "transform" (use saved model)
     pca_model_path: str = "artifacts/pca_consolidator.json",
+    emit_runtime_jsonl: Optional[str] = None,
 ) -> None:
     """
     Build labeled dataset from window scores using PCA consolidator.
@@ -178,9 +180,25 @@ def generate_labeled_dataset(
         # : window_data = load_window_from_disk(paths[i]); feat = make_feature_row(window_data)
         window_data = load_window_from_disk(paths[i])
         feat_row = make_feature_row(window_data)
+
+        baseline_score = float(labels[i])
+        #per-window baseline processing time (PCA transform of 1 row)
+        if emit_runtime_jsonl:
+            one_row = dim_df.iloc[i:i+1]              # that window's dimension vector
+            t0 = time.perf_counter()
+            _ = cons.transform(one_row)               # transform only (no fit)
+            t1 = time.perf_counter()
+            proc_ms = int(round((t1 - t0) * 1000))
+            rec = {"window_id": wid,
+                   "baseline_score": baseline_score,
+                "processing_time_ms": proc_ms}
+            if emit_runtime_jsonl:
+                Path(emit_runtime_jsonl).parent.mkdir(parents=True, exist_ok=True)
+            with open(emit_runtime_jsonl, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec) + "\n")
         # Attach metadata
         feat_row["window_id"] = wid
-        feat_row["label"] = float(labels[i])
+        feat_row["label"] = baseline_score
         # else minimal row:
         rows.append(feat_row)
 
@@ -208,6 +226,7 @@ if __name__ == "__main__":
     ap.add_argument("--output_parquet", required=True)
     ap.add_argument("--pca_mode", choices=["fit", "transform"], default="fit")
     ap.add_argument("--pca_model_path", default="artifacts/pca_consolidator.json")
+    ap.add_argument("--emit_runtime_jsonl", type=str, default=None,help="If set, write per-window baseline score + processing_time_ms (JSONL)")
     args = ap.parse_args()
 
     generate_labeled_dataset(
@@ -215,6 +234,7 @@ if __name__ == "__main__":
         output_parquet=args.output_parquet,
         pca_mode=args.pca_mode,
         pca_model_path=args.pca_model_path,
+        emit_runtime_jsonl=args.emit_runtime_jsonl,
     )
 
 __all__ = ['generate_labeled_dataset']

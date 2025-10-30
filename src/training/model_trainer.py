@@ -15,7 +15,7 @@ DROP_COLS   = list(CFG.get("drop_cols", ["window_id"]))
 USE_SCALER  = bool(CFG.get("use_scaler", True))
 MAX_TRIALS  = int(CFG.get("max_trials", 50))
 TARGET_MAE  = float(CFG.get("min_target_mae", 0.05))
-OUT_ROOT    = Path(CFG.get("out_root", "./data/artifacts/models/runs"))
+OUT_ROOT    = Path(CFG.get("out_root", "./data/artifacts/models"))
 VER = str(CFG.get("model_version", "0.0.0"))
 UPDATE_LATEST = bool(CFG.get("update_latest_symlink", True))
 
@@ -26,32 +26,99 @@ if not DATA_FILE.exists():
 
 # --- load dataset ---
 df = pd.read_parquet(DATA_FILE) if DATA_FILE.suffix==".parquet" else pd.read_csv(DATA_FILE)
+
+if "meta_end_time" in df.columns:
+    # meta_end_time is usually ISO string; parse once & reuse
+    df["_meta_end_dt"] = pd.to_datetime(df["meta_end_time"], utc=True, errors="coerce")
+    sort_col = "_meta_end_dt"
+elif "meta_start_time" in df.columns:
+    df["_meta_start_dt"] = pd.to_datetime(df["meta_start_time"], utc=True, errors="coerce")
+    sort_col = "_meta_start_dt"
+else:
+    # fallback: derive from window_id if it encodes time, else keep original order
+    sort_col = None
+
+if sort_col is not None:
+    df = df.sort_values(sort_col).reset_index(drop=True)
 if LABEL_COL not in df.columns:
     raise ValueError(f"Label column '{LABEL_COL}' not found")
 y = df[LABEL_COL].astype(float)
 X = df.drop(columns=[LABEL_COL]+DROP_COLS, errors="ignore")
+X = X.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
 print("before drop: ",df.columns)
 print("after drop: ",X.columns)
 #X = X.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
 #bad_cols = [c for c in X.columns if X[c].isna().all() or X[c].nunique(dropna=True) <= 1]
+for c in X.columns:
+    if pd.api.types.is_timedelta64_dtype(X[c]):
+        X[c] = X[c].dt.total_seconds().astype(float)
+
+# 2) Identify numeric vs non-numeric
+num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+non_numeric_cols = [c for c in X.columns if c not in num_cols]
+
+# 3) (Optional but recommended) drop non-numeric from X now (model needs numeric only)
+if non_numeric_cols:
+    print(f"[INFO] Dropping non-numeric columns from features: {non_numeric_cols[:10]}{'...' if len(non_numeric_cols)>10 else ''}")
+    X = X.drop(columns=non_numeric_cols)
+
+
 # Identify problematic columns WITH REASONS
-all_nan_cols = [c for c in X.columns if X[c].isna().all()]
-constant_cols = [c for c in X.columns if X[c].nunique(dropna=True) <= 1]
-near_zero_var_cols = [c for c in X.columns if X[c].std(skipna=True) < 1e-10]
-print(f"\n[FEATURE DROP ANALYSIS]")
+# all_nan_cols = [c for c in X.columns if X[c].isna().all()]
+# constant_cols = [c for c in X.columns if X[c].nunique(dropna=True) <= 1]
+# near_zero_var_cols = [c for c in X.columns if X[c].std(skipna=True) < 1e-10]
+# print(f"\n[FEATURE DROP ANALYSIS]")
+# print(f"  All-NaN columns: {len(all_nan_cols)} - {all_nan_cols[:5]}")
+# print(f"  Constant columns: {len(constant_cols)} - {constant_cols[:5]}")
+# print(f"  Near-zero variance: {len(near_zero_var_cols)} - {near_zero_var_cols[:5]}")
+# # Drop ONLY truly problematic ones
+# bad_cols = list(set(all_nan_cols + constant_cols))
+
+# if bad_cols:
+#     X = X.drop(columns=bad_cols)
+#     print(f"Dropping non-informative  {len(bad_cols)} total cols:", bad_cols)
+
+# 1) Coerce to numeric first (keep legit numeric that arrived as strings), then split to avoid leakage
+X = X.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+
+# 2) Split first; detect drops on TRAIN ONLY (avoid peeking at validation)
+X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 3) Identify problematic columns (TRAIN split only)
+all_nan_cols = [c for c in X_tr.columns if X_tr[c].isna().all()]
+constant_cols = [c for c in X_tr.columns if X_tr[c].nunique(dropna=True) <= 1]
+near_zero_var_cols = [c for c in X_tr.columns if X_tr[c].std(skipna=True) < 1e-10]
+
+print(f"\n[FEATURE DROP ANALYSIS] (train split)")
 print(f"  All-NaN columns: {len(all_nan_cols)} - {all_nan_cols[:5]}")
 print(f"  Constant columns: {len(constant_cols)} - {constant_cols[:5]}")
 print(f"  Near-zero variance: {len(near_zero_var_cols)} - {near_zero_var_cols[:5]}")
-# Drop ONLY truly problematic ones
-bad_cols = list(set(all_nan_cols + constant_cols))
 
+# Drop ONLY truly problematic ones (on both train & val, based on TRAIN detection)
+bad_cols = list(set(all_nan_cols + constant_cols))
 if bad_cols:
-    X = X.drop(columns=bad_cols)
-    print(f"Dropping non-informative  {len(bad_cols)} total cols:", bad_cols)
-    
+    X_tr = X_tr.drop(columns=bad_cols)
+    X_va  = X_va.drop(columns=bad_cols)
+    print(f"Dropping non-informative {len(bad_cols)} total cols (train-based):", bad_cols)   
 
 # --- split + optional scaling ---
-X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
+#X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=0.2, random_state=42)
+
+n = len(df)
+split_idx = int(n * 0.80)  # 80/20 time holdout
+
+train_idx = np.arange(0, split_idx)
+test_idx  = np.arange(split_idx, n)
+
+X_tr = X.iloc[train_idx].copy()
+y_tr = y.iloc[train_idx].copy()
+X_va   = X.iloc[test_idx].copy()   # using "val" nomenclature already present in your code
+y_va   = y.iloc[test_idx].copy()
+
+# If you keep window IDs for later joins, capture them now (optional but recommended):
+win_ids_train = df.loc[train_idx, "window_id"].tolist() if "window_id" in df.columns else []
+win_ids_val   = df.loc[test_idx,  "window_id"].tolist() if "window_id" in df.columns else []
+
 scaler = None
 if USE_SCALER:
     med = X_tr.median(numeric_only=True)
@@ -73,7 +140,7 @@ def objective(trial):
         "booster": trial.suggest_categorical("booster", ["gbtree","dart"]),
         "lambda": trial.suggest_float("lambda", 1e-8, 1.0, log=True),
         "alpha": trial.suggest_float("alpha", 1e-8, 1.0, log=True),
-        "max_depth": trial.suggest_int("max_depth", 3, 10),
+        "max_depth": trial.suggest_int("max_depth", 3, 6),
         "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
         "subsample": trial.suggest_float("subsample", 0.6, 1.0),
         "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
@@ -82,7 +149,7 @@ def objective(trial):
     params["seed"] = 42
     params["random_state"] = 42
 
-    num_round = trial.suggest_int("num_boost_round", 200, 1200, step=50)
+    num_round = trial.suggest_int("num_boost_round", 100, 600, step=50)
     esr = 50
 
     model = xgb.train(
@@ -117,6 +184,29 @@ val_r2   = float(r2_score(y_va, y_pred))
 val_rmse = float(np.sqrt(mean_squared_error(y_va, y_pred)))
 print(f"[VAL*] MAE: {val_mae:.5f} | R²: {val_r2:.5f} | RMSE: {val_rmse:.5f}")
 
+split_meta = {
+    "mode": "time",
+    "train_windows": int(len(y_tr)),
+    "test_windows":  int(len(y_va)),
+}
+# If meta times exist, record boundaries for traceability
+if "meta_start_time" in df.columns and "meta_end_time" in df.columns:
+    split_meta.update({
+        "train_start": str(df.loc[0, "meta_start_time"]),
+        "train_end":   str(df.loc[split_idx-1, "meta_end_time"]) if split_idx>0 else None,
+        "test_start":  str(df.loc[split_idx, "meta_start_time"]) if split_idx < n else None,
+        "test_end":    str(df.loc[n-1, "meta_end_time"]),
+    })
+
+time_holdout_metrics = {
+    "mae":  float(val_mae),
+    "rmse": float(val_rmse),
+    "r2":   float(val_r2),
+    "n_windows": int(len(y_va)),
+}
+
+
+
 # --- make run folder ---
 ts = time.strftime("%Y%m%d_%H%M%S")
 finger = hashlib.md5(str(best.params).encode()).hexdigest()[:10]
@@ -135,6 +225,7 @@ joblib.dump(best_model, pkl_path)        # joblib Booster
 if scaler is not None:
     joblib.dump(scaler, scaler_path)
 
+
 meta = {
     "best_params": best.params,
     "optuna_best_trial_mae": float(study.best_value),
@@ -151,6 +242,11 @@ meta = {
     "timestamp": ts,
     "fingerprint": finger
 }
+
+meta["split"] = split_meta
+meta.setdefault("metrics", {})
+meta["metrics"]["time_holdout"] = time_holdout_metrics
+
 
 def _file_md5(p: Path) -> str:
     import hashlib

@@ -28,14 +28,26 @@ logger = get_phase4_logger('kafka_consumer')
 # ============ CONFIGURATION ============
 import os
 BOOTSTRAP = os.getenv("KAFKA_BROKERS", "localhost:9092")
+
 IN_TOPIC = "e2-data"
 OUT_TOPIC = "dq-scores"
 GROUP_ID = "dqscore-xapp"
 
-WINDOW_SIZE_SEC = 300  # 5 minutes
-TICK_INTERVAL_SEC = 60  # 1 minute step
+#WINDOW_SIZE_SEC = 300  # 5 minutes
+#TICK_INTERVAL_SEC = 60  # 1 minute step
+WINDOW_SIZE_SEC   = int(os.getenv("WINDOW_SIZE_SEC", "300"))
+TICK_INTERVAL_SEC = int(os.getenv("TICK_INTERVAL_SEC", "60"))
+COALESCE_MS = int(os.getenv("COALESCE_MS", "700"))  # 0.5–1.0s is good
+
+# coalesce state
+_COALESCE_TARGET_END_MS = None
+_COALESCE_UNTIL_MS = 0
+_COALESCE_SEEN_CELL = False
+_COALESCE_SEEN_UE = False
 
 _running = True
+_LAST_WINDOW_END_MS = None
+
 
 # ============ WINDOWED BUFFER ============
 class TimeWindowBuffer:
@@ -66,21 +78,39 @@ class TimeWindowBuffer:
                 kafka_ts_ms = row.get("kafka_ts_ms")
                 self.buffers[entity_id].append((ts, kafka_ts_ms, row))
     
-    def get_window_data(self, entity_id: str, end_time: datetime) -> List[Dict]:
-        """Get all rows in window [end_time - window_size, end_time]"""
-        start_time = end_time - self.window_size
-        
-        window_data = []
+    def get_window_data(self, entity_id: str, end_time) -> List[Dict]:
+        """Get rows in [end-W, end] by *ingestion time* (kafka_ts_ms), right-edge inclusive"""
+        # accept datetime or ms
+        if isinstance(end_time, int):
+            end_ms = int(end_time)
+        else:
+            # datetime -> ms
+            end_ms = int(end_time.timestamp() * 1000)
+
+        start_ms = end_ms - int(self.window_size.total_seconds()*1000) + 1
+        out = []
         for ts, kafka_ts_ms, row in self.buffers[entity_id]:
-            if start_time <= ts <= end_time:
-                window_data.append(row)
-        
-        return window_data
+            if kafka_ts_ms is None:
+                continue
+            k = int(kafka_ts_ms)
+            if start_ms <= k <= end_ms:         # RIGHT-EDGE inclusive
+                out.append(row)
+        return out
     
     def get_all_entities(self) -> List[str]:
         """Get list of all entity IDs being tracked"""
         return list(self.buffers.keys())
     
+    def cleanup_by_kafka_cutoff(self, cutoff_ms: int):
+        """Drop all buffered rows with kafka_ts_ms <= cutoff_ms (by entity)"""
+        for entity_id in list(self.buffers.keys()):
+            dq = self.buffers[entity_id]
+            while dq and dq[0][1] is not None and int(dq[0][1]) <= cutoff_ms:
+                dq.popleft()
+            if not dq:
+                del self.buffers[entity_id]
+
+
     def cleanup_old_data(self, cutoff_time: datetime):
         """Remove data older than cutoff"""
         for entity_id in list(self.buffers.keys()):
@@ -94,6 +124,14 @@ class TimeWindowBuffer:
             if not self.buffers[entity_id]:
                 del self.buffers[entity_id]
 
+    def max_ingest_ms(self) -> Optional[int]:
+        m = None
+        for dq in self.buffers.values():
+            for _, kafka_ts_ms, _ in dq:
+                if kafka_ts_ms is not None:
+                    m = kafka_ts_ms if m is None or kafka_ts_ms > m else m
+        return m
+
 # ============ KAFKA HELPERS ============
 def _stop(*_):
     global _running
@@ -103,25 +141,55 @@ def _iso_from_ms(ms: int) -> str:
     return datetime.fromtimestamp(ms/1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 def _decode_value(v):
-    """Decode Kafka message value"""
+    """Decode Kafka message value into JSON dict (or None on failure)."""
+    if not v:
+        return None
+
+    # bytes normalize
     try:
-        if isinstance(v, (bytes, bytearray)):
-            b = bytes(v)
-            # Strip 4-byte length prefix if present
-            if len(b) >= 4 and b[0] != ord('{'):
-                b = b[4:]
-            
-            decoded_str = b.decode("utf-8", errors='replace')
-            return json.loads(decoded_str)
-            
-        elif isinstance(v, str):
-            return json.loads(v)
-        else:
-            raise TypeError(f"Unsupported value type: {type(v)}")
-            
-    except Exception as e:
-        logger.error(f"Decode error: {e}")
-        raise
+        b = v if isinstance(v, (bytes, bytearray)) else v.encode("utf-8")
+    except Exception:
+        return None
+
+    # common 4-byte length prefix case
+    if len(b) >= 4 and b[0] not in (ord('{'), ord('[')):
+        b = b[4:]
+
+    # find first JSON start in bytes
+    lb, ls = b.find(b'{'), b.find(b'[')
+    starts = [x for x in (lb, ls) if x != -1]
+    if not starts:
+        return None
+    b = b[min(starts):]
+
+    # strict UTF-8; if fails, skip
+    try:
+        s = b.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+    s = s.strip()
+    if not s or s[0] not in ('{', '['):
+        return None
+
+    # trim trailing garbage after last closing brace/bracket
+    closer = '}' if s[0] == '{' else ']'
+    end = s.rfind(closer)
+    if end != -1:
+        s = s[:end+1]
+
+    # parse JSON; fallback to line-by-line if needed
+    try:
+        return json.loads(s)
+    except Exception:
+        for line in s.splitlines():
+            line = line.strip()
+            if line and line[0] in ('{','['):
+                try:
+                    return json.loads(line)
+                except Exception:
+                    pass
+        return None
 
 def normalize_from_e2sm(msg: dict) -> Tuple[Optional[str], List[Dict]]:
     """Parse E2SM message to normalized rows"""
@@ -220,6 +288,8 @@ def build_consumer():
         "max.poll.interval.ms": 300000,
     })
 
+def _floor_to_minute_ms(ms: int) -> int:
+    return ms - (ms % 60000)
 
 def validate_features(features: Dict[str, float], predictor: DQScorePredictor):
     """Diagnostic: Check feature alignment"""
@@ -242,6 +312,13 @@ def validate_features(features: Dict[str, float], predictor: DQScorePredictor):
     if bad_values:
         logger.warning(f"Non-finite values in features: {bad_values}  features: {list(bad_values.keys())[:5]}...")
 
+def _reset_coalesce():
+    global _COALESCE_TARGET_END_MS, _COALESCE_UNTIL_MS, _COALESCE_SEEN_CELL, _COALESCE_SEEN_UE
+    _COALESCE_TARGET_END_MS = None
+    _COALESCE_UNTIL_MS = 0
+    _COALESCE_SEEN_CELL = False
+    _COALESCE_SEEN_UE = False
+
 # ============ WINDOW PROCESSOR ============
 def process_windows(cell_buffer: TimeWindowBuffer, 
                    ue_buffer: TimeWindowBuffer,
@@ -250,58 +327,66 @@ def process_windows(cell_buffer: TimeWindowBuffer,
                    publisher: ScorePublisher):
     """Process all windows and compute DQ scores"""
     
-    current_time = datetime.now(timezone.utc)
-    window_id = current_time.strftime("%Y%m%d_%H%M%S")
-    
+    global _LAST_WINDOW_END_MS
+
+    # 1) latest ingestion ts across streams (publish-ASAP → use MAX watermark)
+    cell_max = cell_buffer.max_ingest_ms()
+    ue_max   = ue_buffer.max_ingest_ms()
+    ingest_max_ms = max([x for x in (cell_max, ue_max) if x is not None], default=None)
+    if ingest_max_ms is None:
+        return  # no data yet
+
+    # 2) close window at the last fully-ingested minute (RIGHT-EDGE inclusive)
+    window_end_ms = _floor_to_minute_ms(ingest_max_ms) + 60000 - 1
+
+    # 3) enforce 1-min hop (avoid duplicate emits)
+    if _LAST_WINDOW_END_MS is not None and window_end_ms <= _LAST_WINDOW_END_MS:
+        return
+    if _LAST_WINDOW_END_MS is not None and window_end_ms - _LAST_WINDOW_END_MS < 60000:
+        return
+
+    _LAST_WINDOW_END_MS = window_end_ms
+    window_end   = datetime.fromtimestamp(window_end_ms/1000, tz=timezone.utc)
+    window_start = window_end - timedelta(seconds=WINDOW_SIZE_SEC)
+    window_id    = window_end.strftime("%Y%m%d_%H%M%S")
+
     logger.info(f"\n{'='*60}")
     logger.info(f"[TICK] Processing window: {window_id}")
     logger.info(f"{'='*60}")
-    
-    # Collect all data from both buffers for the window
+
+    # Collect rows by *ingestion-time* in [end-W, end] (expects get_window_data to use kafka_ts_ms)
     cell_entities = cell_buffer.get_all_entities()
-    ue_entities = ue_buffer.get_all_entities()
-    
-    # Get all cell data
+    ue_entities   = ue_buffer.get_all_entities()
+
     all_cell_rows = []
     for entity_id in cell_entities:
-        rows = cell_buffer.get_window_data(entity_id, current_time)
-        all_cell_rows.extend(rows)
-    
-    # Get all UE data
+        all_cell_rows.extend(cell_buffer.get_window_data(entity_id, window_end_ms))  # pass ms
+
     all_ue_rows = []
     for entity_id in ue_entities:
-        rows = ue_buffer.get_window_data(entity_id, current_time)
-        all_ue_rows.extend(rows)
-    
-    logger.info(f"Window data: {len(all_cell_rows)} cell rows, {len(all_ue_rows)} UE rows")
-    
-    # Check if we have enough data
-    #if len(all_cell_rows) < 10 or len(all_ue_rows) < 10:
-        #logger.warning(f"Insufficient data for window {window_id} - skipping")
-        #return
+        all_ue_rows.extend(ue_buffer.get_window_data(entity_id, window_end_ms))      # pass ms
+
     logger.info(f"Window data: {len(all_cell_rows)} cell rows, {len(all_ue_rows)} UE rows")
 
+    # Derive diagnostics (event-time only for metadata; selection is ingestion-time)
     all_rows = (all_cell_rows or []) + (all_ue_rows or [])
-    #window_start = current_time - timedelta(seconds=WINDOW_SIZE_SEC)
-    window_end = current_time
     if all_rows:
-        last_event_ts = max(datetime.fromisoformat(r["timestamp"].replace('Z','+00:00')) for r in all_rows).astimezone(timezone.utc)
-        # max kafka ingestion time seen in window
-        last_kafka_ts_ms = max(int(r.get("kafka_ts_ms", 0)) for r in all_rows if "kafka_ts_ms" in r)
+        last_event_ts = max(datetime.fromisoformat(r["timestamp"].replace('Z','+00:00'))
+                            for r in all_rows).astimezone(timezone.utc)
+        kafka_ts_vals = [int(r["kafka_ts_ms"]) for r in all_rows if "kafka_ts_ms" in r]
+        last_kafka_ts_ms = max(kafka_ts_vals) if kafka_ts_vals else None
     else:
         last_event_ts = None
         last_kafka_ts_ms = None
+
     try:
-        # Convert to DataFrames
+        # DataFrames + unit conversion
         cell_df = pd.DataFrame(all_cell_rows)
-        ue_df = pd.DataFrame(all_ue_rows)
-        
-        # Apply unit conversion
+        ue_df   = pd.DataFrame(all_ue_rows)
         cell_df, ue_df = converter.standardize_units_comprehensive(cell_df, ue_df)
         logger.info(" Unit conversion applied")
-        
-        # Prepare window data
-        window_start = current_time - timedelta(seconds=WINDOW_SIZE_SEC)
+
+        # Window metadata payload
         window_data = {
             'cell_data': cell_df,
             'ue_data': ue_df,
@@ -311,29 +396,26 @@ def process_windows(cell_buffer: TimeWindowBuffer,
                 'window_end_time': window_end.timestamp(),
                 'start_time': window_start.isoformat(),
                 'end_time': window_end.isoformat(),
-                'last_event_ts':last_event_ts.isoformat() if last_event_ts else None,
+                'last_event_ts': last_event_ts.isoformat() if last_event_ts else None,
                 'last_kafka_ts_ms': last_kafka_ts_ms,
             }
         }
-        
-        # Extract features
+
+        # Feature → predict → timings
+        t0 = time.time()
         features = make_feature_row(window_data)
-        logger.info(f" Extracted {len(features)} features")
-        
-        # Predict DQ score
         validate_features(features, predictor)
         dq_score = predictor.predict(features)
-        logger.info(f" Predicted DQ Score: {dq_score:.4f}")
-        
-        # Publish score
+        processing_time_ms = int((time.time() - t0) * 1000)
+
+        # Publish
         publish_ts_ms = int(time.time() * 1000)
-        latency_ms = None
-        if last_kafka_ts_ms:
-            latency_ms = max(0, publish_ts_ms - int(last_kafka_ts_ms))
+        latency_ms = (max(0, publish_ts_ms - int(last_kafka_ts_ms))
+                      if last_kafka_ts_ms is not None else None)
         publisher.publish_score(
             window_id=window_id,
             start_time=window_start.isoformat(),
-            end_time=current_time.isoformat(),
+            end_time=window_end.isoformat(),
             dq_score=dq_score,
             metadata={
                 'cell_entities': len(cell_entities),
@@ -344,27 +426,37 @@ def process_windows(cell_buffer: TimeWindowBuffer,
                 'last_kafka_ts_ms': last_kafka_ts_ms,
                 'publish_ts_ms': publish_ts_ms,
                 'latency_ms': latency_ms,
+                'processing_time_ms': processing_time_ms,
             }
         )
+        logger.info(f" Predicted DQ Score: {dq_score:.4f}")
         logger.info(f" Published score to '{OUT_TOPIC}' topic")
-        
+
     except Exception as e:
         logger.error(f"Window processing failed: {e}")
-        import traceback
-        traceback.print_exc()
-    
-    # Cleanup old data
-    cutoff = current_time - timedelta(seconds=WINDOW_SIZE_SEC * 2)
-    cell_buffer.cleanup_old_data(cutoff)
-    ue_buffer.cleanup_old_data(cutoff)
-    
+        import traceback; traceback.print_exc()
+
+    # 4) Cleanup by *ingestion cutoff* so late arrivals can't re-enter past windows
+    try:
+        _hist_retain_ms = (WINDOW_SIZE_SEC - 60) * 1000  # keep last W-60s for next window
+        cutoff_ms = window_end_ms - _hist_retain_ms
+        cell_buffer.cleanup_by_kafka_cutoff(cutoff_ms)   # drop k_ts < cutoff_ms
+        ue_buffer.cleanup_by_kafka_cutoff(cutoff_ms)
+    except AttributeError:
+        # fallback: time-based old-data cleanup if cutoff method not present
+        cutoff = window_end - timedelta(seconds=WINDOW_SIZE_SEC * 2)
+        cell_buffer.cleanup_old_data(cutoff)
+        ue_buffer.cleanup_old_data(cutoff)
+
     logger.info(f"{'='*60}\n")
+
 
 # ============ MAIN CONSUMER LOOP ============
 def consume_and_predict():
     """Main consumer loop with prediction pipeline"""
     global _running
-    
+    global _COALESCE_TARGET_END_MS, _COALESCE_UNTIL_MS, _COALESCE_SEEN_CELL, _COALESCE_SEEN_UE
+
     # Initialize components
     logger.info("Initializing DQ Score xApp...")
     
@@ -393,19 +485,30 @@ def consume_and_predict():
     logger.info(f"  Window: {WINDOW_SIZE_SEC}s, Tick: {TICK_INTERVAL_SEC}s")
     logger.info(f"{'='*60}\n")
     
+    now = time.time()
+    align = 60 - (int(now) % 60)
+    if 0 < align < 60:
+        time.sleep(align)
     msg_count = 0
     last_tick_time = time.time()
 
     
     try:
         while _running:
+
+            now_ms = int(time.time() * 1000)
+            if _COALESCE_TARGET_END_MS is not None and now_ms >= _COALESCE_UNTIL_MS:
+                process_windows(cell_buffer, ue_buffer, converter, predictor, publisher)
+                _reset_coalesce()
+                last_tick_time = time.time()
+
+            # Check if time to process window
+            current_time = time.time()
+            if current_time - last_tick_time >= TICK_INTERVAL_SEC:
+                process_windows(cell_buffer, ue_buffer, converter, predictor, publisher)
+                last_tick_time = current_time
             msg = consumer.poll(0.5)    
             if msg is None:
-                # Check if time to process window
-                current_time = time.time()
-                if current_time - last_tick_time >= TICK_INTERVAL_SEC:
-                    process_windows(cell_buffer, ue_buffer, converter, predictor, publisher)
-                    last_tick_time = current_time
                 continue
                 
             if msg.error():
@@ -417,6 +520,10 @@ def consume_and_predict():
                 msg_count += 1
                 val = msg.value()
                 obj = _decode_value(val)
+
+                if obj is None:
+                    consumer.commit(msg, asynchronous=True)
+                    continue
                 
                 # Parse E2SM message
                 entity, rows = normalize_from_e2sm(obj)
@@ -428,15 +535,35 @@ def consume_and_predict():
                     # Add to appropriate buffer (conversion happens here)
                     if entity == "cell":
                         cell_buffer.add_rows("cell", rows, converter)
+                        _COALESCE_SEEN_CELL = True
                     elif entity == "ue":
                         ue_buffer.add_rows("ue", rows, converter)
+                        _COALESCE_SEEN_UE = True
+                cell_max = cell_buffer.max_ingest_ms()
+                ue_max   = ue_buffer.max_ingest_ms()
+                if cell_max is not None or ue_max is not None:
+                    #new_end_ms = _floor_to_minute_ms(max([x for x in (cell_max, ue_max) if x is not None])) + 60000 - 1 #min(cell_max, ue_max))
+                    cand_end_ms = _floor_to_minute_ms(max([x for x in (cell_max, ue_max) if x is not None])) + 60000 - 1
+                    if _LAST_WINDOW_END_MS is None or cand_end_ms - _LAST_WINDOW_END_MS >= 60000:
+                        now_ms = int(time.time() * 1000)
+
+                        # new target minute? start/refresh coalesce window
+                        if _COALESCE_TARGET_END_MS != cand_end_ms:
+                            _COALESCE_TARGET_END_MS = cand_end_ms
+                            _COALESCE_UNTIL_MS = now_ms + COALESCE_MS
+
                     
+                        if (_COALESCE_SEEN_CELL and _COALESCE_SEEN_UE) or now_ms >= _COALESCE_UNTIL_MS:
+                            process_windows(cell_buffer, ue_buffer, converter, predictor, publisher)
+                            _reset_coalesce()
+                            last_tick_time = time.time()                    
                 consumer.commit(msg, asynchronous=True)
                 
             except Exception as e:
                 logger.error(f"Message processing error: {e}")
                 import traceback
                 traceback.print_exc()
+
                 consumer.commit(msg, asynchronous=True)
                 
     finally:

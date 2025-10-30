@@ -8,11 +8,21 @@ from data_processing.unit_converter import UnitConverter
 from data_processing.window_generator import WindowGenerator
 from training.inject_faults import inject_faults_inplace_by_windows
 from pathlib import Path
+import argparse
+import pandas as pd
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--reuse-faulted", action="store_true",
+                        help="Use already saved *_fault_dt.csv and skip new fault injection")
+    parser.add_argument("--size-minutes", type=int, default=5,
+                        help="Window size in minutes (e.g., 1,3,5,10)")
+    parser.add_argument("--overlap-percent", type=float, default=80.0,
+                        help="Window overlap percent (e.g., 80 for 80%)")
+    args = parser.parse_args()
     log = get_phase1_logger("build_windows_only")
     log.info("="*60)
-    log.info("WINDOW BUILD: load -> convert -> generate 5m windows -> save")
+    log.info(f"WINDOW BUILD: load -> convert -> generate {args.size_minutes}m windows -> save")
     log.info("="*60)
 
     # Step 1: Load raw data
@@ -28,42 +38,58 @@ def main():
              f"| new_cols={conv_sum['cell_data']['new_columns_created']} "
              f"| flags={conv_sum['cell_data']['flags_added']}")
     # step 3: Fault injection
-    cell_df2, cell_manifest = inject_faults_inplace_by_windows(
-        cell_df,
-        is_cell=True,
-        ts_col="timestamp",
-        window_seconds=300,
-        overlap=0.8,
-        faulty_window_fraction=0.70,     # 10–20% widows have faults
-        timestamps_per_faulty_window=3,  # per faulty window 1 timestamp par fault
-        rows_fraction_per_timestamp=0.40,# us ts group ka ~10% rows corrupt
-        random_state=42,
-    )
+    if args.reuse_faulted:
+        cell_df2 = pd.read_csv("./data/raw/CellReports_fault_dt.csv")
+        ue_df2   = pd.read_csv("./data/raw/UEReports_fault_dt.csv")
+        for df in (cell_df2, ue_df2):
+            s = df["timestamp"]
+            if not pd.api.types.is_datetime64_any_dtype(s):
+                df["timestamp"] = pd.to_datetime(
+                    s.astype(str).str.replace("_jitter", "", regex=False),
+                    utc=True, errors="coerce"
+                )
+            df.dropna(subset=["timestamp"], inplace=True)
+        log.info("Reusing existing faulted CSVs (skipping injection).")
+    else:
+        cell_df2, cell_manifest = inject_faults_inplace_by_windows(
+            cell_df,
+            is_cell=True,
+            ts_col="timestamp",
+            window_seconds=int(args.size_minutes)*60,
+            overlap=0.8,
+            faulty_window_fraction=0.35,     # 10–20% widows have faults
+            timestamps_per_faulty_window=4,  # per faulty window 1 timestamp par fault
+            rows_fraction_per_timestamp=0.60,# us ts group ka ~10% rows corrupt
+            random_state=42,
+        )
 
-    ue_df2, ue_manifest = inject_faults_inplace_by_windows(
-        ue_df,
-        is_cell=False,
-        ts_col="timestamp",
-        window_seconds=300,
-        overlap=0.8,
-        faulty_window_fraction=0.70,
-        timestamps_per_faulty_window=3, 
-        rows_fraction_per_timestamp=0.50,
-        random_state=42,
-    )
+        ue_df2, ue_manifest = inject_faults_inplace_by_windows(
+            ue_df,
+            is_cell=False,
+            ts_col="timestamp",
+            window_seconds=int(args.size_minutes)*60,
+            overlap=0.8,
+            faulty_window_fraction=0.35,
+            timestamps_per_faulty_window=4, 
+            rows_fraction_per_timestamp=0.70,
+            random_state=42,
+        )
 
-    # Save manifests for verification
-    cell_manifest.to_csv("./data/raw/CellReports_fault_manifest.csv", index=False)
-    ue_manifest.to_csv("./data/raw/UEReports_fault_manifest.csv", index=False)
-    cell_df2.to_csv("./data/raw/CellReports_fault_dt.csv", index=False)
-    ue_df2.to_csv("./data/raw/UEReports_fault_dt.csv", index=False)
+        # Save manifests for verification
+        cell_manifest.to_csv("./data/raw/CellReports_fault_manifest.csv", index=False)
+        ue_manifest.to_csv("./data/raw/UEReports_fault_manifest.csv", index=False)
+        cell_df2.to_csv("./data/raw/CellReports_fault_dt.csv", index=False)
+        ue_df2.to_csv("./data/raw/UEReports_fault_dt.csv", index=False)
     
     # Step 4: Generate & save windows
     wg = WindowGenerator()
+    wg.window_specs['size_minutes'] = int(args.size_minutes)
+    wg.window_specs['overlap_percent'] = float(args.overlap_percent)    
     windows = wg.generate_windows(cell_df2, ue_df2)
     stats = wg.get_window_statistics(windows)
-    out_dir = PATHS['training'] / 'windows'
+    out_dir = PATHS['training'] / f"windows_{int(args.size_minutes)*60}s"
     wg.save_all_windows(windows, out_dir)
+
 
     log.info(f"Generated windows={stats['window_count']} "
              f"| span(hours)={stats['time_span']['total_hours']:.1f} "
@@ -72,5 +98,17 @@ def main():
     log.info("DONE.")
     return 0
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--reuse-faulted", action="store_true",
+                    help="Use already saved *_fault_dt.csv and skip new fault injection")
+parser.add_argument("--size-minutes", type=int, default=5,
+                    help="Window size in minutes (e.g., 1,3,5,10)")
+parser.add_argument("--overlap-percent", type=float, default=80.0,
+                    help="Window overlap percent (e.g., 80 for 80%)")
+args = parser.parse_args()
+
 if __name__ == "__main__":
     sys.exit(main())
+
+

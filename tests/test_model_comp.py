@@ -408,3 +408,234 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
+"""
+
+# 300s
+python ./tests/test_model_comp.py \
+  --windows_dir ./data/processed/training/v0/windows_300s \
+  --model_dir  ./data/artifacts/models/v1.3.0_300s/20251021_235803_6907daa9a7 \
+  --pca_path   ./data/artifacts/models/pca_consolidator_300s.json \
+  --n_windows  50 \
+  --output_csv ./data/results/300s/model_vs_pca.csv
+
+# 600s
+python ./tests/test_model_comp.py \
+  --windows_dir ./data/processed/training/v0/windows_600s \
+  --model_dir  ./data/artifacts/models/v1.3.0_600s/20251027_161325_1ded779ab5 \
+  --pca_path   ./data/artifacts/models/pca_consolidator_600s.json \
+  --n_windows  50 \
+  --output_csv ./data/results/600s/model_vs_pca.csv
+
+# 180s
+python ./tests/test_model_comp.py \
+  --windows_dir ./data/processed/training/v0/windows_180s \
+  --model_dir  ./data/artifacts/models/v1.3.0_180s/20251027_154044_b37b884647 \
+  --pca_path   ./data/artifacts/models/pca_consolidator_180s.json \
+  --n_windows  50 \
+  --output_csv ./data/results/180s/model_vs_pca.csv  
+
+
+for 300s windows:
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5002
+  Std:    0.1606
+  Min:    0.2000
+  Max:    0.7700
+
+Model Predictions:
+  Mean:   0.4999
+  Std:    0.1611
+  Min:    0.2025
+  Max:    0.7819
+
+Absolute Differences:
+  Mean:   0.0149
+  Std:    0.0144
+  Min:    0.0006
+  Max:    0.0663
+
+Correlation (PCA vs Model): 0.9917
+Mean Absolute Error: 0.0149
+
+
+================================================================================
+SUMMARY STATISTICS latest
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5002
+  Std:    0.1606
+  Min:    0.2000
+  Max:    0.7700
+
+Model Predictions:
+  Mean:   0.5012
+  Std:    0.1594
+  Min:    0.2082
+  Max:    0.7728
+
+Absolute Differences:
+  Mean:   0.0124
+  Std:    0.0120
+  Min:    0.0000
+  Max:    0.0604
+
+Correlation (PCA vs Model): 0.9941
+Mean Absolute Error: 0.0124
+
+for 600s windows:
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5084
+  Std:    0.1876
+  Min:    0.0900
+  Max:    0.7900
+
+Model Predictions:
+  Mean:   0.5096
+  Std:    0.1861
+  Min:    0.0903
+  Max:    0.7894
+
+Absolute Differences:
+  Mean:   0.0036
+  Std:    0.0087
+  Min:    0.0000
+  Max:    0.0427
+
+Correlation (PCA vs Model): 0.9988
+Mean Absolute Error: 0.0036
+
+================================================================================
+SUMMARY STATISTICS latest
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5084
+  Std:    0.1876
+  Min:    0.0900
+  Max:    0.7900
+
+Model Predictions:
+  Mean:   0.5061
+  Std:    0.1891
+  Min:    0.0922
+  Max:    0.7880
+
+Absolute Differences:
+  Mean:   0.0079
+  Std:    0.0125
+  Min:    0.0000
+  Max:    0.0502
+
+Correlation (PCA vs Model): 0.9970
+Mean Absolute Error: 0.0079
+
+
+
+
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5186
+  Std:    0.1580
+  Min:    0.1600
+  Max:    0.7800
+
+Model Predictions:
+  Mean:   0.5185
+  Std:    0.1573
+  Min:    0.1590
+  Max:    0.7749
+
+Absolute Differences:
+  Mean:   0.0081
+  Std:    0.0086
+  Min:    0.0004
+  Max:    0.0499
+
+Correlation (PCA vs Model): 0.9972
+Mean Absolute Error: 0.0081
+================================================================================
+
+
+for 180s windows:
+
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5116
+  Std:    0.1705
+  Min:    0.0300
+  Max:    0.7700
+
+Model Predictions:
+  Mean:   0.5092
+  Std:    0.1673
+  Min:    0.0395
+  Max:    0.7695
+
+Absolute Differences:
+  Mean:   0.0144
+  Std:    0.0109
+  Min:    0.0001
+  Max:    0.0456
+
+Correlation (PCA vs Model): 0.9944
+Mean Absolute Error: 0.0144
+================================================================================
+
+
+================================================================================
+SUMMARY STATISTICS
+================================================================================
+
+Windows Tested: 50
+
+PCA Labels:
+  Mean:   0.5176
+  Std:    0.1744
+  Min:    0.0200
+  Max:    0.8200
+
+Model Predictions:
+  Mean:   0.5106
+  Std:    0.1293
+  Min:    0.2166
+  Max:    0.7308
+
+Absolute Differences:
+  Mean:   0.0435
+  Std:    0.0357
+  Min:    0.0073
+  Max:    0.1966
+
+Correlation (PCA vs Model): 0.9751
+Mean Absolute Error: 0.0435
+================================================================================
+
+"""    

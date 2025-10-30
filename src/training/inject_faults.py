@@ -10,7 +10,15 @@ import math
 
 
 
-
+MICRO_JITTER_PROB = 0.65       # per chosen timestamp
+MACRO_JITTER_PROB = 0.35
+DROP_TS_PROB      = 0.20       # set ts -> NaT for all rows at that timestamp
+LOW_THP_PROB      = 0.30       # set tiny positive throughput (min variability)
+PRB_ZERO_POS_THP_PROB = 0.25   # cell: PRBUsed=0 & THP>0  (violation)
+PRB_GT_AVAIL_PROB = 0.25       # cell: PRBUsed > Avail   (violation)
+CONN_MEAN_GT_MAX_PROB = 0.20   # cell: ConnMean > ConnMax
+ENERGY_SPIKE_PROB = 0.20       # cell: PEE.Energy / AvgPower mismatch
+RECON_MISMATCH_PROB = 0.20     # UE vs Cell mild mismatch
 
 
 
@@ -67,14 +75,14 @@ def _inject_cell_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame
         elif fault_type == "timeliness":
             timestamp_cols = [c for c in row.index if isinstance(c, str) and ("time" in c.lower() or "timestamp" in c.lower())]
             for col in timestamp_cols:
-                orig_val = pd.to_numeric(row[col], errors="coerce")
+                orig_val = pd.to_datetime(row[col], utc=True, errors="coerce")
                 if pd.notna(orig_val):
                     # random large jitter ±61, ±90, ±120 s
                     jitter = random.choice([-240, -180, -120, 120, 180, 240])
-                    row[col] = orig_val + jitter
+                    row[col] = orig_val + pd.Timedelta(seconds=jitter)
                 else:
                     # for string timestamps, append suffix
-                    row[col] = f"{row[col]}_jitter"
+                    row[col] = row[col]
         # Assign the modified row back
         faulty_rows.loc[idx] = row
     return faulty_rows
@@ -127,14 +135,14 @@ def _inject_ue_faults(df: pd.DataFrame, fault_fraction: float) -> pd.DataFrame:
         elif fault_type == "timeliness":
             timestamp_cols = [c for c in row.index if isinstance(c, str) and ("time" in c.lower() or "timestamp" in c.lower())]
             for col in timestamp_cols:
-                orig_val = pd.to_numeric(row[col], errors="coerce")
+                orig_val = pd.to_datetime(row[col], utc=True, errors="coerce")
                 if pd.notna(orig_val):
                     # random large jitter ±61, ±90, ±120 s
                     jitter = random.choice([-240, -180, -120, 120, 180, 240])
-                    row[col] = orig_val + jitter
+                    row[col] = orig_val + pd.Timedelta(seconds=jitter)
                 else:
                     # for string timestamps, append suffix
-                    row[col] = f"{row[col]}_jitter"
+                    row[col] = row[col]
            
         faulty_rows.loc[idx] = row
     return faulty_rows
@@ -200,7 +208,7 @@ def _find_ts_col(df: pd.DataFrame, preferred: Optional[str] = None) -> str:
 
 def _ensure_dt(df: pd.DataFrame, ts_col: str):
     if not pd.api.types.is_datetime64_any_dtype(df[ts_col]):
-        df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+        df[ts_col] = pd.to_datetime(df[ts_col], utc=True, errors="coerce")
     if df[ts_col].isna().all():
         raise ValueError(f"Could not parse datetimes in '{ts_col}'.")
 
@@ -264,7 +272,42 @@ def _cell_updates(row, fault_type):
             ts = pd.to_datetime(ts, utc=True, errors="coerce")
             if pd.notna(ts):
                 jitter = random.choice([-240, -180, -120, 120, 180, 240]) # secs
-                u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)            
+                u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)    
+    # --- NEW: violations & energy ---
+    if random.random() < PRB_ZERO_POS_THP_PROB:
+        for side in ("Dl","Ul"):
+            thp = f"DRB.UEThp{side}"
+            prb = f"RRU.PrbUsed{side}"
+            if thp in row and prb in row:
+                u[prb] = 0
+                # tiny positive THP to trigger 'thp_pos_prb_zero'
+                u[thp] = max(0.01, float(row.get(thp, 0)) or 0.01)
+
+    if random.random() < PRB_GT_AVAIL_PROB:
+        for side in ("Dl","Ul"):
+            used = f"RRU.PrbUsed{side}"
+            avail = f"RRU.PrbAvail{side}"
+            if used in row and avail in row and pd.notna(row[avail]):
+                u[used] = float(row[avail]) + random.randint(1, 6)
+
+    if random.random() < CONN_MEAN_GT_MAX_PROB:
+        if "RRC.ConnMean" in row and "RRC.ConnMax" in row:
+            cm = float(pd.to_numeric(row["RRC.ConnMean"], errors="coerce") or 3)
+            u["RRC.ConnMax"] = max(0, cm - random.randint(1, 3))  # force mean>max
+
+    if random.random() < ENERGY_SPIKE_PROB:
+        # mismatch between ΔEnergy and Power*Δt
+        if "PEE.Energy" in row:
+            u["PEE.Energy"] = float(pd.to_numeric(row["PEE.Energy"], errors="coerce") or 0) * random.uniform(1.3, 2.0)
+        elif "PEE.AvgPower" in row:
+            u["PEE.AvgPower"] = float(pd.to_numeric(row["PEE.AvgPower"], errors="coerce") or 0) * random.uniform(1.5, 2.5)
+
+    if random.random() < LOW_THP_PROB:
+        for side in ("Dl","Ul"):
+            thp = f"DRB.UEThp{side}"
+            if thp in row:
+                u[thp] = random.choice([0.0, 0.001, 0.005])  # affect *_min
+
     return u
 
 def _ue_updates(row, fault_type):
@@ -289,7 +332,13 @@ def _ue_updates(row, fault_type):
             ts = pd.to_datetime(ts, utc=True, errors="coerce")
             if pd.notna(ts):
                 jitter = random.choice([-240, -180, -120, 120, 180, 240])  # secs
-                u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)           
+                u[ts_col] = pd.to_datetime(row[ts_col]) + pd.Timedelta(seconds=jitter)  
+    if random.random() < RECON_MISMATCH_PROB:
+        # small random scale on UE PRB/THP to create ue/cell ratio drift
+        for side in ("Dl","Ul"):
+            for col in (f"RRU.PrbUsed{side}", f"DRB.UEThp{side}"):
+                if col in row and pd.notna(row[col]):
+                    u[col] = float(row[col]) * random.uniform(0.6, 1.4)                         
     return u
 
 def inject_faults_inplace_by_windows(
@@ -310,10 +359,12 @@ def inject_faults_inplace_by_windows(
     - In each selected window, pick up to `timestamps_per_faulty_window` timestamps and corrupt a fraction of rows
     - Keeps row count per timestamp unchanged; returns (df_with_flags, manifest)
     """
+
     if not (0 <= overlap < 1):
         raise ValueError("overlap must be in [0, 1).")
     stride = max(1, int(round(window_seconds * (1 - overlap))))
     rnd = np.random.RandomState(random_state)
+    random.seed(random_state)
 
     ts = _find_ts_col(df, ts_col)
     _ensure_dt(df, ts)
@@ -358,6 +409,19 @@ def inject_faults_inplace_by_windows(
         chosen_ts = rnd.choice(uniq_ts, size=pick_n, replace=False)
 
         for tstamp in chosen_ts:
+            apply_drop = rnd.random() < DROP_TS_PROB
+            if apply_drop:
+                out.loc[out_sorted.index[(out_sorted[ts] == tstamp)], ts] = pd.NaT
+            else:
+                if rnd.random() < MICRO_JITTER_PROB:
+                    jitter_sec = rnd.randint(7, 16) * rnd.choice([-1, 1])
+                elif rnd.random() < MACRO_JITTER_PROB:
+                    jitter_sec = rnd.choice([-240, -180, -120, 120, 180, 240])
+                else:
+                    jitter_sec = 0
+                if jitter_sec != 0:
+                    idxs = g[g[ts] == tstamp].index
+                    out.loc[idxs, ts] = out.loc[idxs, ts] + pd.Timedelta(seconds=int(jitter_sec)) 
             sel = g[g[ts] == tstamp].index
             if len(sel) == 0:
                 continue
@@ -370,19 +434,22 @@ def inject_faults_inplace_by_windows(
                 if w_idx % 2 == 0 or rnd.random() < 0.5:
                     ftype = "timeliness"
                 else:
-                    ftype = random.choice(FAULT_TYPES)
+                    ftype = rnd.choice(FAULT_TYPES)
                 
                 if ftype == "timeliness":
                     # ts_col  timestamp 
-                    orig_ts = out.at[rid, ts]
-                    orig_dt = pd.to_datetime(orig_ts, errors="coerce")
-                    if pd.notna(orig_dt):
+                    #orig_ts = out.at[rid, ts]
+                    #orig_dt = pd.to_datetime(orig_ts, errors="coerce")
+                    #if pd.notna(orig_dt):
                         # cadence offset ±61/90/120s 
-                        jitter = random.choice([-240, -180, -120, 120, 180, 240])
-                        out.at[rid, ts] = orig_dt + pd.Timedelta(seconds=jitter)
-                    else:
-                        # string timestamp है तो suffix जोड़ दें
-                        out.at[rid, ts] = f"{orig_ts}_jitter"
+                        #jitter = random.choice([-240, -180, -120, 120, 180, 240])
+                        #out.at[rid, ts] = orig_dt + pd.Timedelta(seconds=jitter)
+                    #else:
+                        # string timestamp 
+                        #out.at[rid, ts] = f"{orig_ts}_jitter"
+                    if pd.notna(out.at[rid, ts]):
+                        jitter = int(rnd.choice([-240, -180, -120, 120, 180, 240]))
+                        out.at[rid, ts] = out.at[rid, ts] + pd.Timedelta(seconds=jitter)
                 else:
                     if is_cell:
                         updates = _cell_updates(out.loc[rid], ftype)

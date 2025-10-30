@@ -145,8 +145,6 @@
     "ue_RRU.PrbUsedDl_max",
     "ue_RRU.PrbUsedDl_median",
     "ue_RRU.PrbUsedDl_q25",
-    "ue_RRU.PrbUsedDl_q75",
-    "label",
-    "window_id"
+    "ue_RRU.PrbUsedDl_q75"
   ]
 }

@@ -1,10 +1,23 @@
 {
-  "columns": [
+  "best_params": {
+    "booster": "dart",
+    "lambda": 1.468236119902252e-06,
+    "alpha": 0.0008445201907737288,
+    "max_depth": 6,
+    "learning_rate": 0.13093964022480206,
+    "subsample": 0.8024271374644062,
+    "colsample_bytree": 0.8975203840709042,
+    "num_boost_round": 100
+  },
+  "optuna_best_trial_mae": 0.019491525194707048,
+  "optuna_best_trial_r2": 0.9741277064906161,
+  "final_val_mae": 0.019491525194707048,
+  "final_val_r2": 0.9741277064906161,
+  "final_val_rmse": 0.02618242686594588,
+  "data_file": "data/processed/training/v0/train_labels_600s.parquet",
+  "features": [
     "meta_hour_of_day",
     "meta_day_of_week",
-    "meta_window_id",
-    "meta_start_time",
-    "meta_end_time",
     "cell_rows",
     "ue_rows",
     "total_rows",
@@ -146,7 +159,38 @@
     "ue_RRU.PrbUsedDl_median",
     "ue_RRU.PrbUsedDl_q25",
     "ue_RRU.PrbUsedDl_q75",
-    "label",
-    "window_id"
-  ]
+    "_meta_end_dt"
+  ],
+  "drop_cols": [
+    "window_id",
+    "meta_window_id",
+    "meta_start_time",
+    "meta_end_time"
+  ],
+  "label_col": "label",
+  "use_scaler": true,
+  "run_dir": "data/artifacts/models/v1.3.0_600s/20251027_161325_1ded779ab5",
+  "timestamp": "20251027_161325",
+  "fingerprint": "1ded779ab5",
+  "split": {
+    "mode": "time",
+    "train_windows": 8060,
+    "test_windows": 2015,
+    "train_start": "2022-12-31T16:00:00",
+    "train_end": "2023-01-06T06:29:00",
+    "test_start": "2023-01-06T06:20:00",
+    "test_end": "2023-01-07T16:04:00"
+  },
+  "metrics": {
+    "time_holdout": {
+      "mae": 0.019491525194707048,
+      "rmse": 0.02618242686594588,
+      "r2": 0.9741277064906161,
+      "n_windows": 2015
+    }
+  },
+  "version": "1.3.0_600s",
+  "git_commit": "263b921",
+  "data_md5": "a2a72cb9f9281f3f12b7f58194d8e2db",
+  "features_md5": "d05b93ff21eb1c40857510155c935856"
 }

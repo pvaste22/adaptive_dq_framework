@@ -32,7 +32,7 @@ class WindowGenerator:
     def generate_windows(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> List[Dict]:
         """Generate 5-minute windows from cell and UE data."""
         
-        self.logger.info("Generating 5-minute sliding windows...")
+        self.logger.info(f"Generating {self.window_specs['size_minutes']}-minute sliding windows...")
         
         # Validate input data
         if cell_data.empty and ue_data.empty:
@@ -42,6 +42,11 @@ class WindowGenerator:
         cell_data = cell_data.sort_values('timestamp')
         ue_data = ue_data.sort_values('timestamp')
         
+        for d in (cell_data, ue_data):
+            if not pd.api.types.is_datetime64_any_dtype(d["timestamp"]):
+                d["timestamp"] = pd.to_datetime(d["timestamp"], utc=True, errors="coerce")
+            d.dropna(subset=["timestamp"], inplace=True)
+
         # Get time boundaries
         start_time = max(
             cell_data['timestamp'].min() if not cell_data.empty else pd.Timestamp.max,
