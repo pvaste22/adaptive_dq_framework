@@ -179,21 +179,33 @@ def generate_labeled_dataset(
     for i, wid in enumerate(window_ids):
         # : window_data = load_window_from_disk(paths[i]); feat = make_feature_row(window_data)
         window_data = load_window_from_disk(paths[i])
+        # --- dimensions compute time ---
+        t_dim0 = time.perf_counter()
         feat_row = make_feature_row(window_data)
+        t_dim1 = time.perf_counter()
+        baseline_dim_time_ms = int(round((t_dim1 - t_dim0) * 1000))
+        #feat_row = make_feature_row(window_data)
 
         baseline_score = float(labels[i])
         #per-window baseline processing time (PCA transform of 1 row)
         if emit_runtime_jsonl:
-            one_row = dim_df.iloc[i:i+1]              # that window's dimension vector
-            t0 = time.perf_counter()
-            _ = cons.transform(one_row)               # transform only (no fit)
-            t1 = time.perf_counter()
-            proc_ms = int(round((t1 - t0) * 1000))
-            rec = {"window_id": wid,
-                   "baseline_score": baseline_score,
-                "processing_time_ms": proc_ms}
-            if emit_runtime_jsonl:
-                Path(emit_runtime_jsonl).parent.mkdir(parents=True, exist_ok=True)
+            Path(emit_runtime_jsonl).parent.mkdir(parents=True, exist_ok=True)
+            one_row = dim_df.iloc[i:i+1]
+            t_pca0 = time.perf_counter()
+            _ = cons.transform(one_row)
+            t_pca1 = time.perf_counter()
+            baseline_pca_time_ms = int(round((t_pca1 - t_pca0) * 1000))
+
+            baseline_total_ms = baseline_dim_time_ms + baseline_pca_time_ms
+
+            rec = {
+                "window_id": wid,
+                "baseline_score": baseline_score,
+                "baseline_dim_time_ms": baseline_dim_time_ms,
+                "baseline_pca_time_ms": baseline_pca_time_ms,
+                "baseline_total_ms": baseline_total_ms,
+                "processing_time_ms": baseline_total_ms
+            }
             with open(emit_runtime_jsonl, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(rec) + "\n")
         # Attach metadata

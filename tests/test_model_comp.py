@@ -6,9 +6,9 @@ Usage: python tests/test_model_comparison.py --windows_dir <path> --n_windows 10
 import argparse
 import sys
 from pathlib import Path
+import time
 from typing import Dict, List, Tuple
 import json
-
 import pandas as pd
 import numpy as np
 import joblib
@@ -127,7 +127,11 @@ class ModelComparisonTester:
         # === STEP 1: Traditional Scoring (Dimensions) ===
         self.logger.info("Step 1: Calculating dimension scores...")
         dimensions = _default_dimensions()
+        t_dim0 = time.perf_counter()
         dim_results = score_window(window_path, dimensions=dimensions)
+        t_dim1 = time.perf_counter()
+        baseline_dim_time_ms = int(round((t_dim1 - t_dim0) * 1000))
+        #dim_results = score_window(window_path, dimensions=dimensions)
         
         # Extract MPR scores
         dim_scores = {}
@@ -141,7 +145,12 @@ class ModelComparisonTester:
         # === STEP 2: PCA Consolidation ===
         self.logger.info("\nStep 2: Generating PCA label...")
         dim_df = pd.DataFrame([dim_scores])
+        t_pca0 = time.perf_counter()
         pca_label = self.pca_consolidator.transform(dim_df)[0]
+        t_pca1 = time.perf_counter()
+        baseline_pca_time_ms = int(round((t_pca1 - t_pca0) * 1000))
+        baseline_total_ms = baseline_dim_time_ms + baseline_pca_time_ms
+        #pca_label = self.pca_consolidator.transform(dim_df)[0]
         self.logger.info(f"  PCA Label: {pca_label:.4f}")
         
         # === STEP 3: Feature Extraction ===
@@ -151,6 +160,8 @@ class ModelComparisonTester:
         from scoring.traditional_scorer import load_window_from_disk
         window_data = load_window_from_disk(window_path)
         
+        t_feat0 = time.perf_counter()
+
         feature_row = make_feature_row(window_data)
         print(" actually generated feats: ", len(feature_row))
         feature_row['window_id'] = window_id
@@ -187,9 +198,17 @@ class ModelComparisonTester:
         else:
             X_scaled = X.values
         
-        # Predict
+
+        t_pred0 = time.perf_counter()
         dtest = xgb.DMatrix(X_scaled)
         model_pred = float(self.model.predict(dtest)[0])
+        t_pred1 = time.perf_counter()
+
+        model_predict_time_ms = int(round((t_pred1 - t_pred0) * 1000))
+        model_total_ms = int(round((t_pred1 - t_feat0) * 1000))
+        # Predict
+        #dtest = xgb.DMatrix(X_scaled)
+        #model_pred = float(self.model.predict(dtest)[0])
         self.logger.info(f"  Model Prediction: {model_pred:.4f}")
         
         # === STEP 5: Comparison ===
@@ -208,8 +227,15 @@ class ModelComparisonTester:
             'pca_label': pca_label,
             'model_prediction': model_pred,
             'absolute_diff': diff,
-            'dim_details': dim_results
+            'dim_details': dim_results,
+            # NEW fields:
+            'baseline_dim_time_ms': baseline_dim_time_ms,
+            'baseline_pca_time_ms': baseline_pca_time_ms,
+            'baseline_total_ms': baseline_total_ms,
+            'model_predict_time_ms': model_predict_time_ms,
+            'model_total_ms': model_total_ms
         }
+
     
     def test_multiple_windows(self, windows_dir: Path, n_windows: int = 10) -> pd.DataFrame:
         """
@@ -273,7 +299,13 @@ class ModelComparisonTester:
                     'window_id': r['window_id'],
                     'pca_label': r['pca_label'],
                     'model_pred': r['model_prediction'],
-                    'abs_diff': r['absolute_diff']
+                    'abs_diff': r['absolute_diff'],
+                    # timings:
+                    'baseline_dim_time_ms': r['baseline_dim_time_ms'],
+                    'baseline_pca_time_ms': r['baseline_pca_time_ms'],
+                    'baseline_total_ms': r['baseline_total_ms'],
+                    'model_predict_time_ms': r['model_predict_time_ms'],
+                    'model_total_ms': r['model_total_ms'],
                 }
                 # Add dimension scores
                 row.update(r['dimension_scores'])

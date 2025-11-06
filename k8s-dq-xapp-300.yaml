@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ricxapp
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dq-xapp-300
+  namespace: ricxapp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: dq-xapp-300 }
+  template:
+    metadata:
+      labels: { app: dq-xapp-300 }
+    spec:
+      containers:
+      - name: dq-xapp
+        image: docker.io/pvaste22/adaptive-dq-xapp:dq-300s-20251103-1539
+        imagePullPolicy: IfNotPresent
+        env:
+        - { name: KAFKA_BOOTSTRAP_SERVERS, value: "my-kafka-controller-0.my-kafka-controller-headless.default.svc.cluster.local:9092" }
+        - { name: KAFKA_BROKERS, value: "my-kafka-controller-0.my-kafka-controller-headless.default.svc.cluster.local:9092" }
+        - { name: TOPIC_INPUT,   value: "e2-data" }
+        - { name: TOPIC_OUTPUT,  value: "dq-scores" }
+        - { name: KAFKA_GROUP_ID,value: "dq-xapp-300" }
+        - { name: WINDOW_SIZE_SEC, value: "300" }
+        - { name: TICK_INTERVAL_SEC, value: "60" }
+        - { name: DQ_MODEL_DIR, value: "/app/data/artifacts/models/latest" }
+        - { name: ARTIFACTS_DIR, value: "/app/data/artifacts/models/latest" }
+        - { name: PYTHONPATH, value: "/app/src" }
+        resources:
+          requests: { cpu: "200m", memory: "256Mi" }
+          limits:   { cpu: "1",    memory: "1Gi" }        
