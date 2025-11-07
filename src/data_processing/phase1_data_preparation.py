@@ -7,7 +7,7 @@ Key Steps:
 1. Load and preprocess VIAVI dataset
 2. Apply critical unit conversions 
 3. Generate 5-minute windows
-4. Create all baseline artifacts (13 types)
+4. Create all baseline artifacts 
 5. Prepare for Phase 2 quality scoring
 """
 
@@ -48,14 +48,10 @@ class Phase1Orchestrator:
         
         # Phase 1 artifacts to create
         self.artifacts_to_create = [
-            'statistical_baselines',
-            'historical_pdfs', 
+
             'pattern_baselines',
             'temporal_templates',
             'field_ranges',
-            'metadata_config',
-            'sample_windows',
-            'divergence_array_placeholder',
             'dq_baseline'
         ]
         
@@ -110,23 +106,24 @@ class Phase1Orchestrator:
             results['step2'] = {'status': 'completed', 'conversions_applied': True}
             
             # Step 3: Generate windows
-            self.logger.info("Step 3: Generating 5-minute windows...")
-            windows = self._step3_generate_windows(cell_data, ue_data)
-            results['step3'] = {'status': 'completed', 'windows_generated': windows['window_count']}
+            #self.logger.info("Step 3: Generating 5-minute windows...")
+            #windows = self._step3_generate_windows(cell_data, ue_data)
+            #results['step3'] = {'status': 'completed', 'windows_generated': windows['window_count']}
             
             # Step 4: Create baselines
             self.logger.info("Step 4: Creating baseline artifacts...")
-            artifacts = self._step4_create_baselines(cell_data, ue_data, windows)
+            artifacts = self._step4_create_baselines(cell_data, ue_data) 
+            #, windows)
             results['step4'] = {'status': 'completed', 'artifacts_created': len(artifacts)}
             
             # Step 5: Save artifacts and prepare for Phase 2
             self.logger.info("Step 5: Saving artifacts and preparing for Phase 2...")
-            artifact_paths = self._step5_save_and_prepare(cell_data, ue_data, windows, artifacts)
+            artifact_paths = self._step5_save_and_prepare(cell_data, ue_data, artifacts) #windows, artifacts)
             results['step5'] = {'status': 'completed', 'artifact_paths': artifact_paths}
             
             # Step 6: Generate comprehensive report
             self.logger.info("Step 6: Generating Phase 1 completion report...")
-            report = self._step6_generate_report(results, artifacts, windows)
+            report = self._step6_generate_report(results, artifacts) #, windows)
             results['step6'] = {'status': 'completed', 'report_path': report['report_path']}
             
             execution_time = (datetime.now() - start_time).total_seconds()
@@ -222,38 +219,39 @@ class Phase1Orchestrator:
         
         return window_stats
     
-    def _step4_create_baselines(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame, window_stats: Dict) -> Dict:
+    def _step4_create_baselines(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame) -> Dict: 
+        #, window_stats: Dict) -> Dict:
         """Step 4: Create all baseline artifacts"""
 
         # Load sample windows from disk for KS tests
-        windows_dir = self.paths['training'] / 'windows'
-        window_index_file = windows_dir / 'window_index.json'
+        #windows_dir = self.paths['training'] / 'windows'
+        #window_index_file = windows_dir / 'window_index.json'
     
-        sample_windows = []
-        if window_index_file.exists():
-            with open(window_index_file, 'r') as f:
-                index = json.load(f)
-                total_windows = index['total_count']
+        #sample_windows = []
+        #if window_index_file.exists():
+            #with open(window_index_file, 'r') as f:
+                #index = json.load(f)
+                #total_windows = index['total_count']
             
                 # Sample 100 windows evenly
-                n_samples = min(100, total_windows)
-                sample_indices = np.linspace(0, total_windows - 1, n_samples, dtype=int)
+                #n_samples = min(100, total_windows)
+                #sample_indices = np.linspace(0, total_windows - 1, n_samples, dtype=int)
             
-                for idx in sample_indices:                    
-                    window_info = index['windows'][idx]
-                    abs_path = Path(window_info['path'])
-                    window_info['path'] = abs_path.relative_to(self.paths['processed'])
-                    sample_windows.append(window_info)
+                #for idx in sample_indices:                    
+                    #window_info = index['windows'][idx]
+                    #abs_path = Path(window_info['path'])
+                    #window_info['path'] = abs_path.relative_to(self.paths['processed'])
+                    #sample_windows.append(window_info)
         
         artifacts = {}
         
         # 1. Statistical Baselines
-        self.logger.info("Creating statistical baselines...")
-        artifacts['statistical_baselines'] = self._create_statistical_baselines(cell_data, ue_data)
+        #self.logger.info("Creating statistical baselines...")
+        #artifacts['statistical_baselines'] = self._create_statistical_baselines(cell_data, ue_data)
         
         # 2. Historical PDFs
-        self.logger.info("Creating histogram-based PDFs...")
-        artifacts['historical_pdfs'] = self._create_histogram_pdfs(cell_data, ue_data)
+        #self.logger.info("Creating histogram-based PDFs...")
+        #artifacts['historical_pdfs'] = self._create_histogram_pdfs(cell_data, ue_data)
         
         # 3. Correlation Matrix
         #self.logger.info("Creating correlation matrix...")
@@ -276,21 +274,21 @@ class Phase1Orchestrator:
         #artifacts['quality_thresholds'] = self._create_quality_thresholds()
         
         # 7. Sample Windows
-        self.logger.info("Sampling historical windows...")
+        #self.logger.info("Sampling historical windows...")
         #artifacts['sample_windows'] = self._create_sample_windows(windows)
-        artifacts['sample_windows'] = self._create_sample_windows(sample_windows)
+        #artifacts['sample_windows'] = self._create_sample_windows(sample_windows)
 
         
         # 8. Metadata Configuration
-        self.logger.info("Creating metadata configuration...")
-        artifacts['metadata_config'] = self._create_metadata_config()
+        #self.logger.info("Creating metadata configuration...")
+        #artifacts['metadata_config'] = self._create_metadata_config()
         
         # 9. Placeholder for divergence array
-        artifacts['divergence_array'] = {
-            'status': 'placeholder',
-            'note': 'Will be populated during quality scoring phase',
-            'expected_size': '1000-2000 JSD values'
-        }
+        #artifacts['divergence_array'] = {
+            #'status': 'placeholder',
+            #'note': 'Will be populated during quality scoring phase',
+            #'expected_size': '1000-2000 JSD values'
+        #}
 
         # 10. DQ Baseline
         self.logger.info("Creating dq_baseline...")
@@ -470,8 +468,12 @@ class Phase1Orchestrator:
         cell_col = self.column_names.get('cell_entity', 'Viavi.Cell.Name') # keep existing
         # --- 1) MIMO zero-rate (cell data)
         mimo_band = {"median": None, "q25": None, "q75": None, "n": 0}
-        mimo_pref_col = 'CARR.AverageLayersDl'
-        mimo_fallback_col = 'RRU.MaxLayerDlMimo'
+        #mimo_pref_col = 'CARR.AverageLayersDl'
+        #mimo_fallback_col = 'RRU.MaxLayerDlMimo'
+        from common.constants import METRIC_GROUPS
+        mimo_metrics = METRIC_GROUPS.get('mimo_metrics', ['CARR.AverageLayersDl', 'RRU.MaxLayerDlMimo'])
+        mimo_pref_col = mimo_metrics[0] if len(mimo_metrics) > 0 else 'CARR.AverageLayersDl'
+        mimo_fallback_col = mimo_metrics[1] if len(mimo_metrics) > 1 else 'RRU.MaxLayerDlMimo'
         use_col = None
         if {mimo_pref_col, cell_col}.issubset(cell_data.columns):
             use_col = mimo_pref_col
@@ -495,8 +497,14 @@ class Phase1Orchestrator:
         # --- 2) CQI no-measurement rate (UE data) — per-timestamp global fraction → IQR
         cqi_band = {"median": None, "q25": None, "q75": None, "n": 0}
         ts_col = self.column_names.get('timestamp', 'timestamp')
-        if {'DRB.UECqiDl', ts_col}.issubset(ue_data.columns) and not ue_data.empty:
-            udf = ue_data[[ts_col, 'DRB.UECqiDl']].copy()
+        #if {'DRB.UECqiDl', ts_col}.issubset(ue_data.columns) and not ue_data.empty:
+            #udf = ue_data[[ts_col, 'DRB.UECqiDl']].copy()
+        from common.constants import METRIC_GROUPS
+        cqi_metrics = METRIC_GROUPS.get('cqi_metrics', ['DRB.UECqiDl', 'DRB.UECqiUl'])
+        cqi_dl_col = cqi_metrics[0] if len(cqi_metrics) > 0 else 'DRB.UECqiDl'
+        
+        if {cqi_dl_col, ts_col}.issubset(ue_data.columns) and not ue_data.empty:
+            udf = ue_data[[ts_col, cqi_dl_col]].copy()
             udf[ts_col] = pd.to_datetime(udf[ts_col], errors='coerce')
             udf['is_cqi0'] = pd.to_numeric(udf['DRB.UECqiDl'], errors='coerce').eq(0)
             # per-timestamp fraction of CQI==0 across all UEs
@@ -1100,8 +1108,8 @@ class Phase1Orchestrator:
         
         return metadata
     
-    def _step5_save_and_prepare(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame, 
-                               windows: List[Dict], artifacts: Dict) -> Dict:
+    def _step5_save_and_prepare(self, cell_data: pd.DataFrame, ue_data: pd.DataFrame, artifacts: Dict) -> Dict:
+                               #windows: List[Dict], artifacts: Dict) -> Dict:
         """Step 5: Save artifacts and prepare for Phase 2"""
         
         artifact_paths = {}
@@ -1111,15 +1119,15 @@ class Phase1Orchestrator:
         processed_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime(self.versioning['timestamp_format'])
         artifact_formats = {
-            'statistical_baselines': 'pkl',
-            'historical_pdfs': 'pkl',  # or 'npz' if converted to numpy
+            #'statistical_baselines': 'pkl',
+            #'historical_pdfs': 'pkl',  # or 'npz' if converted to numpy
             #'correlation_matrix': 'json',
             'pattern_baselines': 'pkl',
             'temporal_templates': 'pkl',
             'field_ranges': 'json',
             #'quality_thresholds': 'json',
-            'metadata_config': 'json',
-            'sample_windows': 'json',
+            #'metadata_config': 'json',
+            #'sample_windows': 'json',
             'dq_baseline': 'json'
         }
         
@@ -1153,8 +1161,8 @@ class Phase1Orchestrator:
             artifact_paths[artifact_name] = str(artifact_file)
         
         # Save sample windows
-        windows_dir = self.paths['historical_windows']
-        windows_dir.mkdir(parents=True, exist_ok=True)
+        #windows_dir = self.paths['historical_windows']
+        #windows_dir.mkdir(parents=True, exist_ok=True)
         
         #sample_windows = windows[:50] if len(windows) > 50 else windows
         #windows_file = windows_dir / f'sample_windows_{timestamp}.pkl'
@@ -1166,7 +1174,7 @@ class Phase1Orchestrator:
         registry = {
             'creation_timestamp': timestamp,
             'phase1_artifacts': artifact_paths,
-            'total_windows_generated': len(windows),
+            #'total_windows_generated': len(windows),
             'artifacts_ready_for_phase2': [k for k in artifacts.keys() if artifacts[k].get('status') != 'placeholder'],
             'next_steps': [
                 'Run Phase 2: Quality scoring and model training',
@@ -1183,7 +1191,7 @@ class Phase1Orchestrator:
         self.logger.info(f"Saved {len(artifact_paths)} artifact files")
         return artifact_paths
     
-    def _step6_generate_report(self, results: Dict, artifacts: Dict, windows: List[Dict]) -> Dict:
+    def _step6_generate_report(self, results: Dict, artifacts: Dict) -> Dict: #, windows: List[Dict]) -> Dict:
         """Step 6: Generate comprehensive Phase 1 report"""
         
         report = {
@@ -1198,7 +1206,7 @@ class Phase1Orchestrator:
                     'ues': results.get('step1', {}).get('records', {}).get('ues', 0)
                 },
                 'conversions_applied': results.get('step2', {}).get('conversions_applied', False),
-                'windows_generated': results.get('step3', {}).get('windows_generated', 0)
+                #'windows_generated': results.get('step3', {}).get('windows_generated', 0)
             },
             'artifacts_created': {
                 'total_artifacts': len(artifacts),
@@ -1264,7 +1272,7 @@ def main():
             print("\n" + "="*60)
             print("PHASE 1 COMPLETED SUCCESSFULLY")
             print("="*60)
-            print(f"Windows generated: {results['step3']['windows_generated']}")
+            #print(f"Windows generated: {results['step3']['windows_generated']}")
             print(f"Artifacts created: {results['step4']['artifacts_created']}")
             print(f"Execution time: {results['execution_summary']['total_time_seconds']:.1f} seconds")
             print(f"Report saved to: {results['step6']['report_path']}")

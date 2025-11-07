@@ -135,6 +135,11 @@ COLUMN_NAMES = VIAVI_CONFIG.get('column_names', {
 # Metric groups
 METRIC_GROUPS = VIAVI_CONFIG.get('metric_groups', {})
 
+mimo_metrics: {'RRU.MaxLayerDlMimo', 'CARR.AverageLayersDl'}
+cqi_metrics: {'DRB.UECqiDl', 'DRB.UECqiUl'}
+throughput_metrics: {'DRB.UEThpDl', 'DRB.UEThpUl'}
+prb_metrics: {'RRU.PrbUsedDl', 'RRU.PrbUsedUl', 'RRU.PrbAvailDl', 'RRU.PrbAvailUl', 'RRU.PrbTotDl', 'RRU.PrbTotUl'}
+
 # Data quirks
 DATA_QUIRKS = VIAVI_CONFIG.get('data_quirks', {
     'tb_counters_unreliable': True,

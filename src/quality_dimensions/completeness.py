@@ -49,12 +49,13 @@ class CompletenessDimension(BaseDimension):
         self.mimo_expected_zero_rate = EXPECTED_PATTERNS.get('mimo_zero_rate', 0.86)
         
         # Define mandatory fields
+        from common.constants import METRIC_GROUPS
+        prb_avail = [m for m in METRIC_GROUPS.get('prb_metrics', []) if 'Avail' in m]
         self.mandatory_fields_cell = [
             self.timestamp_col,
-            self.cell_entity_col,
-            'RRU.PrbAvailDl',
-            'RRU.PrbAvailUl'
-        ]
+            self.cell_entity_col
+        ] + prb_avail[:2]  # Take first 2 (Dl, Ul)
+        
         self.mandatory_fields_ue = [
             self.timestamp_col,
             self.ue_entity_col

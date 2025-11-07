@@ -1,0 +1,24 @@
+{
+  "creation_timestamp": "20251107_122821",
+  "phase1_artifacts": {
+    "processed_data": {
+      "cell_data": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/cell_data_processed.parquet",
+      "ue_data": "/workspace/test-xapp/adaptive_dq_framework_1/data/processed/training/v0/ue_data_processed.parquet"
+    },
+    "field_ranges": "/workspace/test-xapp/adaptive_dq_framework_1/data/artifacts/field_ranges/field_ranges_v1_20251107_122821.json",
+    "pattern_baselines": "/workspace/test-xapp/adaptive_dq_framework_1/data/artifacts/pattern_baselines/pattern_baselines_v1_20251107_122821.pkl",
+    "temporal_templates": "/workspace/test-xapp/adaptive_dq_framework_1/data/artifacts/temporal_templates/temporal_templates_v1_20251107_122821.pkl",
+    "dq_baseline": "/workspace/test-xapp/adaptive_dq_framework_1/data/artifacts/dq_baseline/dq_baseline_v1_20251107_122821.json"
+  },
+  "artifacts_ready_for_phase2": [
+    "field_ranges",
+    "pattern_baselines",
+    "temporal_templates",
+    "dq_baseline"
+  ],
+  "next_steps": [
+    "Run Phase 2: Quality scoring and model training",
+    "Generate quality labels using dimension scores",
+    "Train XGBoost model with features"
+  ]
+}

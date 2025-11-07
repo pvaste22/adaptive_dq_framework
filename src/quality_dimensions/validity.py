@@ -30,19 +30,21 @@ class ValidityDimension(BaseDimension):
         self.ue_col   = COLUMN_NAMES.get('ue_entity', 'Viavi.UE.Name')
 
         # Known numeric fields by table
-        self.numeric_cell = [
-            'DRB.UEThpDl','DRB.UEThpUl',
-            'RRU.PrbUsedDl','RRU.PrbUsedUl',
-            'RRU.PrbAvailDl','RRU.PrbAvailUl',
-            'RRU.PrbTotDl','RRU.PrbTotUl',
-            'RRC.ConnMean','RRC.ConnMax',
-            'PEE.AvgPower','PEE.Energy','PEE.Energy_interval'
-        ]
-        self.numeric_ue = [
-            'DRB.UEThpDl','DRB.UEThpUl',
-            'RRU.PrbUsedDl','RRU.PrbUsedUl',
-            'DRB.UECqiDl','DRB.UECqiUl'
-        ]
+        from common.constants import METRIC_GROUPS
+        
+        # Build from config metric groups
+        self.numeric_cell = (
+            METRIC_GROUPS.get('throughput_metrics', []) +
+            METRIC_GROUPS.get('prb_metrics', []) +
+            METRIC_GROUPS.get('connection_metrics', []) +
+            METRIC_GROUPS.get('energy_metrics', [])
+        )
+        
+        self.numeric_ue = (
+            METRIC_GROUPS.get('throughput_metrics', []) +
+            [m for m in METRIC_GROUPS.get('prb_metrics', []) if 'Used' in m] +
+            METRIC_GROUPS.get('cqi_metrics', [])
+        )
 
         # Enums (if present) — keep optional
         self.enum_fields = {
