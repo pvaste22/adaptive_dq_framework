@@ -65,6 +65,7 @@ data/artifacts/historical_windows/*.pkl
 !data/artifacts/baselines/.gitkeep
 !data/artifacts/historical_windows/.gitkeep
 
+
 # Configuration with sensitive data
 config/secrets.yaml
 config/production.yaml

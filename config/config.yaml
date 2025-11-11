@@ -151,7 +151,7 @@ processing:
 
 # Machine Learning Configuration
 ML_Training:
-  enabled: true  # Enable in Phase 2
+  enabled: true  
   model_type: "xgboost"
   hyperparameter_tuning: true
   validation_split: 0.2
